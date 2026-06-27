@@ -2606,6 +2606,23 @@ function masterReset(){
   alert('Reset complete. All data cleared and default compounds loaded.');
 }
 
+function checkBackupReminder(){
+  const lastRemind=localStorage.getItem('pt_friends_remind');
+  const now=Date.now();
+  const ONE_WEEK=7*24*60*60*1000;
+  if(!lastRemind||now-parseInt(lastRemind)>ONE_WEEK){
+    localStorage.setItem('pt_friends_remind', now.toString());
+    // Only show if user has actual data worth backing up
+    if(D.logs&&D.logs.length>0){
+      setTimeout(()=>{
+        if(confirm('📦 Weekly Backup Reminder\n\nIt\'s been a week since your last backup prompt.\n\nTap OK to save a backup now, or Cancel to skip.')){
+          exportData();
+        }
+      }, 1500);
+    }
+  }
+}
+
 function exportData(){
   const date=new Date().toISOString().slice(0,10);
   const filename='peptide-backup-'+date+'.json';
@@ -2753,6 +2770,7 @@ function init(){
     setTimeout(()=>alert('Welcome to Peptide Tracker!\n\nYour protocol has been pre-loaded with common compounds. Go to the Protocol tab to customise your doses and schedule.'),500);
   }
   load();
+  checkBackupReminder();
   document.getElementById('hdrDate').textContent=new Date().toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
   viewDate=tod();
   updateDateNav();
