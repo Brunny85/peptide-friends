@@ -461,33 +461,28 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:#0033A0" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:#5577CC;margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:#0033A0;opacity:0.5;margin-top:2px">DIAG-BUILD-5</div>
+      <div style="font-size:9px;color:#0033A0;opacity:0.5;margin-top:2px">DIAG-BUILD-6</div>
       </div>
     </div>
   </div>
 
   <div class="scroll" id="scroll">
     <div id="pg-today" class="pg">
-<!-- Date Navigator -->
-<div class="date-nav">
-        <button class="date-nav-btn" onclick="changeDay(-1)" title="Previous day">‹</button>
-        <div class="date-nav-center">
-          <div class="date-nav-label" id="nav-date-label">Today</div>
-          <div class="date-nav-sub" id="nav-date-sub"></div>
+<div class="tickall hidden" id="tickall">
+        <div class="tickall-row" onclick="tickAll()">
+          <div class="chk" id="tick-chk"><svg width="12" height="9" fill="none" viewBox="0 0 12 9"><path d="M1 4l3.5 3.5L11 1" stroke="#0033A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <span class="tickall-lbl">Tick All Done</span>
+          <span id="tick-cnt" style="font-size:12px;color:var(--text2);margin-left:auto;font-family:var(--mono)"></span>
         </div>
-        <button class="date-nav-btn" onclick="changeDay(1)" id="nav-next-btn" title="Next day">›</button>
       </div>
-<div id="expiry-legend" style="display:none;align-items:center;gap:8px;background:rgba(220,50,30,.15);border:1px solid rgba(220,80,60,.35);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:rgba(255,200,190,1)">
-        <span style="font-size:16px">🔴</span>
-        <span>Red border = within 7 days of cycle end. Plan your next cycle soon.</span>
+<div id="save-confirm" style="text-align:center;font-size:12px;color:var(--success);margin-top:6px;display:none">✓ Saved successfully</div>
+<!-- Data backup -->
+<div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-s" onclick="exportData()" style="flex:1;font-size:13px">⬇ Save Backup</button>
+        <button class="btn btn-s" onclick="document.getElementById('import-file').click()" style="flex:1;font-size:13px">⬆ Restore Backup</button>
+        <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importFromFile(this)">
       </div>
-<div class="past-banner hidden" id="past-banner">📅 Viewing a past day — tap to mark doses taken</div>
-<div class="stats">
-        <div class="stat"><div class="stat-n c-ok" id="s-done">0</div><div class="stat-l">Done</div></div>
-        <div class="stat"><div class="stat-n c-warn" id="s-due">0</div><div class="stat-l">Remaining</div></div>
-        <div class="stat"><div class="stat-n c-accent" id="s-streak">0</div><div class="stat-l">Streak</div></div>
-      </div>
-<div class="ampm" id="ampm"></div>
+<div style="font-size:11px;color:rgba(255,255,255,.4);text-align:center;margin-top:6px">Save backup to Files before every update</div>
 </div>
   </div>
 <div class="tabs">
