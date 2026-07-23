@@ -9,12 +9,9 @@
 <meta name="build" content="20260627034134">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="manifest" href="manifest-friends.json">
-  <meta name="theme-color" content="#0033A0">
-  <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Protocol">
-<title>Peptide Tracker</title>
+<title>Protocol Tracker</title>
 <style>
 :root{
   --bg:#0033A0;--bg2:#0033A0;--card:#1a5cd4;--card2:#0044CC;
@@ -457,12 +454,9 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:#0033A0" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:#5577CC;margin-top:1px" id="hdrDate"></div>
-
-```
-  </div>
-</div>
-```
-
+      <div style="font-size:9px;color:#0033A0;opacity:0.5;margin-top:2px">v1.77-TEST · 16:50</div>
+      </div>
+    </div>
   </div>
 
   <div class="scroll" id="scr">
@@ -580,7 +574,7 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
   <select class="fs" id="pep-saved-select" onchange="loadSavedDose()" style="margin-bottom:10px">
     <option value="">— Load a saved dose —</option>
   </select>
-  <button class="btn btn-s btn-sm" onclick="saveDose()" style="width:100%">💾 Save This Dose</button>
+  <button class="btn btn-s btn-sm" onclick="saveDose()" style="width:100%">💾 Save Current Dose</button>
 </div>
 ```
 
@@ -651,10 +645,6 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
       <div class="date-nav-sub" id="nav-date-sub"></div>
     </div>
     <button class="date-nav-btn" onclick="changeDay(1)" id="nav-next-btn" title="Next day">›</button>
-  </div>
-  <div id="expiry-legend" style="display:none;align-items:center;gap:8px;background:rgba(220,50,30,.15);border:1px solid rgba(220,80,60,.35);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:rgba(255,200,190,1)">
-    <span style="font-size:16px">🔴</span>
-    <span>Red border = within 7 days of cycle end. Plan your next cycle soon.</span>
   </div>
   <div class="past-banner hidden" id="past-banner">📅 Viewing a past day — tap to mark doses taken</div>
   <div class="stats">
@@ -866,7 +856,7 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
 <!-- NAME (only shown when adding new) -->
 <div class="fg" id="form-name-wrap">
   <label class="fl">Name</label>
-  <input class="fi" id="f-name" placeholder="e.g. BPC-157" oninput="checkNameHistory()">
+  <input class="fi" id="f-name" placeholder="e.g. BPC-157">
 </div>
 
 <div class="fdiv"></div>
@@ -976,7 +966,7 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
 <div class="fdiv"></div>
 <div class="fsec">③ Duration &amp; Cycle</div>
 <div class="fr fg">
-  <div><label class="fl">Start Date</label><input class="fi" id="f-start" type="date" onchange="onStartChange()"></div>
+  <div><label class="fl">Start Date</label><input class="fi" id="f-start" type="date"></div>
   <div><label class="fl">Duration</label>
     <select class="fs" id="f-durtype" onchange="onDur()">
       <option value="ongoing">Ongoing</option>
@@ -986,7 +976,7 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
   </div>
 </div>
 <div class="fg hidden" id="f-weeks-wrap"><label class="fl">Number of Weeks</label>
-  <input class="fi" id="f-weeks" type="number" min="1" placeholder="e.g. 4" oninput="onWeeksChange()">
+  <input class="fi" id="f-weeks" type="number" min="1" placeholder="e.g. 4">
 </div>
 <div class="fg hidden" id="f-end-wrap"><label class="fl">End Date</label>
   <input class="fi" id="f-end" type="date">
@@ -1141,10 +1131,10 @@ let D={compounds:[],logs:[],inventory:[],history:[]};
 let viewDate=''; // set in init()
 let fColor=COLORS[0], fSite='';
 
-function save(){localStorage.setItem('pt_friends_v1',JSON.stringify(D))}
+function save(){localStorage.setItem('protocol_data',JSON.stringify(D))}
 function load(){
-  const r=localStorage.getItem('pt_friends_v1');
-  const backup=localStorage.getItem('pt_friends_backup');
+  const r=localStorage.getItem('protocol_data');
+  const backup=localStorage.getItem('pt_backup');
 
   // Pick the best source: whichever has more logs
   let best=null;
@@ -1165,7 +1155,7 @@ function load(){
     D.inventory = best.inventory || [];
     D.history   = best.history   || [];
     // Re-save to protocol_data to keep them in sync
-    localStorage.setItem('pt_friends_v1', JSON.stringify(D));
+    localStorage.setItem('protocol_data', JSON.stringify(D));
     if(!D.inventory.length){ D.inventory=defaultInventory(); save(); }
   } else {
     D.compounds = DEFAULTS.map(x=>({...x}));
@@ -1330,16 +1320,6 @@ function rToday(){
   document.getElementById('s-due').textContent=totalDoses-doneDoses;
   document.getElementById('s-streak').textContent=streak();
 
-  // Show expiring-soon legend if any compounds are within 7 days of end
-  const hasExpiring = due.some(c=>{
-    const ed = getCompoundEndDate(c);
-    if(!ed) return false;
-    const dl = Math.ceil((new Date(ed+'T12:00:00') - new Date(viewDate+'T12:00:00')) / 86400000);
-    return dl >= 0 && dl <= 7;
-  });
-  const legendEl = document.getElementById('expiry-legend');
-  if(legendEl) legendEl.style.display = hasExpiring ? 'flex' : 'none';
-
   const amItems=due.filter(c=>['am','any'].includes(bucket(c))||bucket(c)==='both');
   const pmItems=due.filter(c=>bucket(c)==='pm'||bucket(c)==='both');
 
@@ -1347,54 +1327,12 @@ function rToday(){
     // slot is 'am', 'pm', or null (single dose)
     const ok = slot ? doneToday(c,slot) : allDoneToday(c);
     const checkId = slot ? c.id+'_'+slot : c.id;
-    // Check if expiring within 7 days
-    const endDate = getCompoundEndDate(c);
-    const daysLeft = endDate ? Math.ceil((new Date(endDate+'T12:00:00') - new Date(viewDate+'T12:00:00')) / 86400000) : null;
-    const expiringSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 7;
-
-    // Calculate pin dose display
-    let pinInfo = '';
-    const isOilBased = c.cat === 'Hormone' || c.route === 'IM Injection' || (c.route||'').toLowerCase().includes('oil') || (c.route||'').toLowerCase().includes('im');
-    if(isOilBased && c.vialSize && c.dose && c.unit){
-      // Oil-based: concentration (mg/ml) and dose in mg → show ml to draw
-      const vialMg = parseFloat(c.vialSize);
-      const dose = parseFloat(c.dose);
-      if(vialMg && dose){
-        let doseMg = dose;
-        if(c.unit==='mcg') doseMg = dose/1000;
-        // For oil, vialSize = concentration in mg/ml
-        const volMl = doseMg / vialMg;
-        if(volMl > 0){
-          pinInfo = `<span onclick="event.stopPropagation();showPinDetail('${c.id}')" style="background:rgba(255,255,255,.15);border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600;cursor:pointer;margin-left:4px">💉 ${volMl.toFixed(2)}ml</span>`;
-        }
-      }
-    } else if(!isOilBased && c.vialSize && c.bacWater && c.dose && c.unit){
-      // Peptide: reconstituted with BAC water → show insulin syringe units
-      const vialMg = parseFloat(c.vialSize);
-      const bacMl = parseFloat(c.bacWater);
-      const dose = parseFloat(c.dose);
-      if(vialMg && bacMl && dose){
-        let doseMg = dose;
-        if(c.unit==='mcg') doseMg = dose/1000;
-        else if(c.unit==='IU') doseMg = dose;
-        const concMgMl = vialMg / bacMl;
-        const volMl = doseMg / concMgMl;
-        const units = Math.round(volMl * 100); // U-100 insulin syringe units
-        if(units > 0){
-          pinInfo = `<span onclick="event.stopPropagation();showPinDetail('${c.id}')" style="background:rgba(255,255,255,.15);border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600;cursor:pointer;margin-left:4px">💉 ${units} units</span>`;
-        }
-      }
-    }
-    const expiryBadge = expiringSoon
-      ? `<span style="background:rgba(255,100,80,.25);border:1px solid rgba(255,100,80,.5);color:#ffccc7;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px">${daysLeft===0?'Ends today':daysLeft===1?'1 day left':daysLeft+' days left'}</span>`
-      : '';
-    return`<div class="ci ${ok?'done':''}" onclick="quickCheck('${c.id}','${slot||''}')"
-      style="${expiringSoon && !ok ? 'background:rgba(220,50,30,.18);border:1.5px solid rgba(220,80,60,.4);' : ''}">
+    return`<div class="ci ${ok?'done':''}" onclick="quickCheck('${c.id}','${slot||''}')">
       <div class="chk ${ok?'done':''}"><svg width="12" height="9" fill="none" viewBox="0 0 12 9"><path d="M1 4l3.5 3.5L11 1" stroke="#0033A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="dot" style="background:${c.color}"></div>
       <div style="flex:1;min-width:0">
-        <div class="ci-name" style="display:flex;align-items:center;gap:4px">${c.name}${expiryBadge}</div>
-        <div class="ci-sub" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">${c.dose} ${c.unit} · ${c.route}${pinInfo}</div>
+        <div class="ci-name">${c.name}</div>
+        <div class="ci-sub">${c.dose} ${c.unit} · ${c.route}</div>
       </div>
     </div>`;
   }
@@ -2112,59 +2050,10 @@ function pickColor(c,el){
 function onFreq(){
   // Days always visible — no hiding needed
 }
-function calcEndFromWeeks(startStr, weeks){
-  if(!startStr || !weeks) return '';
-  const d = new Date(startStr+'T12:00:00');
-  d.setDate(d.getDate() + parseInt(weeks)*7);
-  return d.toISOString().split('T')[0];
-}
-
 function onDur(){
   const v=document.getElementById('f-durtype').value;
   document.getElementById('f-weeks-wrap').classList.toggle('hidden',v!=='weeks');
   document.getElementById('f-end-wrap').classList.toggle('hidden',v!=='enddate');
-  // Auto-calculate end date when switching to weeks mode
-  if(v==='weeks'){
-    const weeks = parseInt(document.getElementById('f-weeks').value)||12;
-    const start = document.getElementById('f-start').value || tod();
-    document.getElementById('f-end').value = calcEndFromWeeks(start, weeks);
-    document.getElementById('f-end-wrap').classList.remove('hidden'); // show computed end
-  }
-}
-
-function onWeeksChange(){
-  const weeks = parseInt(document.getElementById('f-weeks').value);
-  const start = document.getElementById('f-start').value || tod();
-  if(weeks && start){
-    const endDate = calcEndFromWeeks(start, weeks);
-    document.getElementById('f-end').value = endDate;
-    document.getElementById('f-end-wrap').classList.remove('hidden');
-    // Show a label with the calculated end date
-    const endLbl = document.getElementById('f-end-computed-lbl');
-    if(endLbl){
-      const fmt = new Date(endDate+'T12:00:00').toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'});
-      endLbl.textContent = 'Ends: '+fmt;
-      endLbl.style.display='block';
-    }
-  }
-}
-
-function onStartChange(){
-  const start = document.getElementById('f-start').value;
-  const durtype = document.getElementById('f-durtype').value;
-  if(durtype==='weeks'){
-    const weeks = parseInt(document.getElementById('f-weeks').value)||12;
-    if(start && weeks){
-      const endDate = calcEndFromWeeks(start, weeks);
-      document.getElementById('f-end').value = endDate;
-      const endLbl = document.getElementById('f-end-computed-lbl');
-      if(endLbl){
-        const fmt = new Date(endDate+'T12:00:00').toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'});
-        endLbl.textContent = 'Ends: '+fmt;
-        endLbl.style.display='block';
-      }
-    }
-  }
 }
 
 function getDays(){
@@ -2204,16 +2093,15 @@ function openAdd(){
   document.getElementById('f-notes').value='';
   document.getElementById('f-cycle').value='';
   document.getElementById('f-pct').value='';
-  const todayStr = tod();
-  document.getElementById('f-start').value=todayStr;
-  document.getElementById('f-weeks').value='12';
-  document.getElementById('f-durtype').value='weeks';
-  document.getElementById('f-end').value=calcEndFromWeeks(todayStr, 12);
+  document.getElementById('f-start').value='';
+  document.getElementById('f-weeks').value='';
+  document.getElementById('f-end').value='';
   document.getElementById('f-clock').value='';
   document.getElementById('f-freq').value='daily';
-  document.getElementById('f-unit').value='mcg';
+  document.getElementById('f-unit').value='mg';
   document.getElementById('f-route').value='SubQ Injection';
   document.getElementById('f-time').value='AM';
+  document.getElementById('f-durtype').value='ongoing';
   document.getElementById('f-cat').value='Peptide';
   document.getElementById('f-active').checked=true;
   buildColors(COLORS[Math.floor(Math.random()*COLORS.length)]);
@@ -2252,107 +2140,6 @@ function openEdit(pid){
   setDays(c.days||[]);
   onFreq();onDur();
   openOv('ov-form');
-}
-
-function checkNameHistory(){
-  const name = document.getElementById('f-name').value.trim().toLowerCase();
-  if(!name || name.length < 2) {
-    document.getElementById('name-history-suggest')?.remove();
-    return;
-  }
-  if(!D.history || !D.history.length) return;
-
-  // Find most recent history entry matching this name (fuzzy)
-  const matches = D.history
-    .filter(h => h.name.toLowerCase().includes(name) || name.includes(h.name.toLowerCase()))
-    .sort((a,b) => b.savedAt.localeCompare(a.savedAt));
-
-  // Remove old suggestion
-  document.getElementById('name-history-suggest')?.remove();
-  if(!matches.length) return;
-
-  const best = matches[0];
-  const s = best.snap;
-  const savedDate = new Date(best.savedAt).toLocaleDateString([],{day:'numeric',month:'short',year:'numeric'});
-  const FL = {daily:'Daily',bid:'Twice Daily',eod:'Every Other Day',e3d:'Every 3 Days',
-    '2xweek':'2x/Week','3xweek':'3x/Week','4xweek':'4x/Week','5xweek':'5x/Week',
-    weekly:'Weekly',biweekly:'Every 2 Wks',monthly:'Monthly',prn:'As Needed'};
-
-  const card = document.createElement('div');
-  card.id = 'name-history-suggest';
-  card.style.cssText = 'background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.25);border-radius:12px;padding:12px;margin-top:8px';
-  card.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">📋 Previous Protocol Found</div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:2px">${best.name}</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
-      ${s.dose||'?'} ${s.unit||''} · ${FL[s.freq]||s.freq||'?'} · ${s.time||'?'}
-      ${s.vialSize ? ' · '+s.vialSize+'mg vial' : ''}
-      ${s.bacWater ? ' · '+s.bacWater+'ml BAC' : ''}<br>
-      <span style="font-size:11px;opacity:.6">Last used: ${savedDate}</span>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button onclick="loadHistoryIntoForm('${best.id}')"
-        style="padding:10px;background:#fff;color:#0033A0;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">
-        ✅ Load Protocol
-      </button>
-      <button onclick="document.getElementById('name-history-suggest')?.remove()"
-        style="padding:10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;font-size:13px;cursor:pointer">
-        Start Fresh
-      </button>
-    </div>
-  `;
-
-  // Insert after the name input
-  const nameWrap = document.getElementById('form-name-wrap');
-  if(nameWrap) nameWrap.after(card);
-}
-
-function loadHistoryIntoForm(histId){
-  const h = (D.history||[]).find(e=>e.id===histId);
-  if(!h) return;
-  const s = h.snap;
-
-  // Fill all form fields from the snapshot
-  if(s.dose)     document.getElementById('f-dose').value     = s.dose;
-  if(s.unit)     document.getElementById('f-unit').value     = s.unit;
-  if(s.route)    document.getElementById('f-route').value    = s.route;
-  if(s.freq)     document.getElementById('f-freq').value     = s.freq;
-  if(s.time)     document.getElementById('f-time').value     = s.time;
-  if(s.clock)    document.getElementById('f-clock').value    = s.clock;
-  if(s.cat)      document.getElementById('f-cat').value      = s.cat;
-  if(s.notes)    document.getElementById('f-notes').value    = s.notes;
-  if(s.doseNotes)document.getElementById('f-doseNotes').value= s.doseNotes;
-  if(s.timingNotes)document.getElementById('f-timingNotes').value=s.timingNotes;
-  if(s.cycle)    document.getElementById('f-cycle').value    = s.cycle;
-  if(s.pct)      document.getElementById('f-pct').value      = s.pct;
-  if(s.vialSize) { try{document.getElementById('f-vialSize').value=s.vialSize;}catch(e){} }
-  if(s.bacWater) { try{document.getElementById('f-bacWater').value=s.bacWater;}catch(e){} }
-  if(s.color)    buildColors(s.color);
-
-  // Days
-  if(s.days && s.days.length){
-    document.querySelectorAll('.day-btn').forEach(b=>b.classList.remove('on'));
-    s.days.forEach(d=>{
-      const btn = document.querySelector(`.day-btn[data-day="${d}"]`);
-      if(btn) btn.classList.add('on');
-    });
-  }
-
-  // Duration - keep start date as today, restore weeks/duration type
-  if(s.durtype){
-    document.getElementById('f-durtype').value = s.durtype;
-    onDur();
-  }
-  if(s.weeks){
-    document.getElementById('f-weeks').value = s.weeks;
-    onWeeksChange();
-  }
-
-  // Remove suggestion card
-  document.getElementById('name-history-suggest')?.remove();
-
-  onFreq();
-  document.getElementById('form-dot').style.background = fColor;
 }
 
 function saveForm(){
@@ -2625,153 +2412,6 @@ function calcOil(){try{
 }catch(e){console.error("calcOil error:",e.message,e.stack);}
 }
 // ─── SAVED DOSES / STACKS ────────────────────────────────────
-function saveDose(){
-  const vialAmt  = document.getElementById('c-vialAmt').value;
-  const vialUnit = document.getElementById('c-vialUnit').value;
-  const bac      = document.getElementById('c-bac').value;
-  const dose     = document.getElementById('c-dose').value;
-  const doseUnit = document.getElementById('c-doseUnit').value;
-  const vol      = document.getElementById('c-vol').value;
-
-  if(!dose && !vol){ alert('Calculate a dose first before saving.'); return; }
-
-  // Get compound name from selector or prompt
-  const sel = document.getElementById('c-compound');
-  const selName = sel.options[sel.selectedIndex]?.text?.split(' (')[0] || '';
-  const name = prompt('Save as:', selName || 'My Dose');
-  if(!name) return;
-
-  const entry = {
-    name,
-    cid: sel.value || null,
-    vialAmt, vialUnit, bac,
-    dose, doseUnit, vol,
-    savedAt: new Date().toISOString()
-  };
-
-  const saved = getSavedDoses();
-  saved.unshift(entry); // newest first
-  putSavedDoses(saved);
-  populateSavedDoseSelect();
-  alert('✅ Saved! You can now recall this or push it to Protocol.');
-}
-
-function loadSavedDose(){
-  const sel  = document.getElementById('pep-saved-select');
-  const idx  = parseInt(sel.value);
-  if(isNaN(idx)) return;
-  const saved = getSavedDoses();
-  const s = saved[idx];
-  if(!s) return;
-
-  // Fill calc fields
-  if(s.vialAmt)  document.getElementById('c-vialAmt').value  = s.vialAmt;
-  if(s.vialUnit) document.getElementById('c-vialUnit').value  = s.vialUnit;
-  if(s.bac)      document.getElementById('c-bac').value       = s.bac;
-  if(s.dose)     document.getElementById('c-dose').value      = s.dose;
-  if(s.doseUnit) document.getElementById('c-doseUnit').value  = s.doseUnit;
-  if(s.vol)      document.getElementById('c-vol').value       = s.vol;
-
-  // If linked to a compound, set the selector
-  if(s.cid){
-    const compSel = document.getElementById('c-compound');
-    compSel.value = s.cid;
-  }
-
-  lastEdited = 'dose';
-  updateConcBar();
-  calcFromDose();
-  drawSyringe(parseFloat(s.vol)||0);
-
-  // Show push-to-protocol button
-  showPushToProtocol(idx);
-}
-
-function showPushToProtocol(savedIdx){
-  // Remove any existing push button
-  document.getElementById('push-to-proto-wrap')?.remove();
-
-  const saved = getSavedDoses();
-  const s = saved[savedIdx];
-  if(!s) return;
-
-  const wrap = document.createElement('div');
-  wrap.id = 'push-to-proto-wrap';
-  wrap.className = 'calc-card';
-  wrap.style.cssText = 'background:#0044CC;border:1.5px solid rgba(255,255,255,.4)';
-  wrap.innerHTML = `
-    <div class="calc-section-lbl">Push to Protocol</div>
-    <p style="font-size:12px;color:rgba(255,255,255,.8);margin-bottom:10px">
-      Save this dose calculation back to a compound's protocol settings.
-    </p>
-    <select class="fs" id="push-proto-target" style="margin-bottom:10px">
-      <option value="">— Select compound —</option>
-      ${D.compounds.map(c=>`<option value="${c.id}" ${c.id===s.cid?'selected':''}>${c.name}</option>`).join('')}
-    </select>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button class="btn btn-s btn-sm" onclick="pushDoseToProtocol(${savedIdx})" style="background:#fff;color:#0033A0;font-weight:700">
-        ⬆ Push to Protocol
-      </button>
-      <button class="btn btn-s btn-sm" onclick="deleteSavedDose(${savedIdx})" style="background:rgba(239,68,68,.3);border-color:rgba(239,68,68,.5)">
-        🗑 Delete
-      </button>
-    </div>
-  `;
-
-  // Insert after the saved doses card
-  const doseCard = document.getElementById('pep-saved-select')?.closest('.calc-card');
-  if(doseCard) doseCard.after(wrap);
-}
-
-function pushDoseToProtocol(savedIdx){
-  const saved = getSavedDoses();
-  const s = saved[savedIdx];
-  if(!s) return;
-
-  const cid = document.getElementById('push-proto-target').value;
-  if(!cid){ alert('Please select a compound.'); return; }
-
-  const idx = D.compounds.findIndex(c=>c.id===cid);
-  if(idx===-1){ alert('Compound not found.'); return; }
-
-  const c = D.compounds[idx];
-  const confirmMsg = `Update ${c.name} protocol with:
-• Dose: ${s.dose} ${s.doseUnit}
-• Vial: ${s.vialAmt} ${s.vialUnit}
-• BAC Water: ${s.bac} ml
-
-This will overwrite the current settings.`;
-  if(!confirm(confirmMsg)) return;
-
-  // Snapshot to history first
-  if(!D.history) D.history = [];
-  D.history.push({ id:uid(), cid, name:c.name, savedAt:new Date().toISOString(), snap:{...c} });
-
-  // Update compound
-  D.compounds[idx] = {
-    ...c,
-    dose:     parseFloat(s.dose) || c.dose,
-    unit:     s.doseUnit || c.unit,
-    vialSize: s.vialAmt || c.vialSize,
-    vialUnit: s.vialUnit || c.vialUnit,
-    bacWater: s.bac || c.bacWater,
-  };
-
-  save();
-  render();
-  document.getElementById('push-to-proto-wrap')?.remove();
-  alert(`✅ ${c.name} protocol updated!`);
-}
-
-function deleteSavedDose(savedIdx){
-  if(!confirm('Delete this saved dose?')) return;
-  const saved = getSavedDoses();
-  saved.splice(savedIdx, 1);
-  putSavedDoses(saved);
-  populateSavedDoseSelect();
-  document.getElementById('push-to-proto-wrap')?.remove();
-}
-
 function getSavedDoses(){ try{return JSON.parse(localStorage.getItem('saved_doses')||'[]');}catch(e){return[];} }
 function putSavedDoses(arr){ localStorage.setItem('saved_doses',JSON.stringify(arr)); }
 function getSavedStacks(){ try{return JSON.parse(localStorage.getItem('saved_stacks')||'[]');}catch(e){return[];} }
@@ -2899,39 +2539,19 @@ function drawOilSyringe(compounds,totalMl){try{
   if(disc) disc.setAttribute('y',fillY-12);
   const rod=document.getElementById('oil-plunger-rod');
   if(rod) rod.setAttribute('height',Math.max(0,fillY-50));
-  let ticks='';
-  if(oilSyringeType==='insulin'){
-    // U-100 insulin scale: show units
-    const maxUnits = Math.round(maxMl*100);
-    const step = maxUnits<=30?5:maxUnits<=50?5:10;
-    for(let u=0;u<=maxUnits;u+=step){
-      const ty=barrelBot-Math.round((u/maxUnits)*barrelH);
-      const maj=u%(step*2)===0;
-      ticks+=`<line x1="198" y1="${ty}" x2="${198+(maj?18:10)}" y2="${ty}" stroke="rgba(255,255,255,0.4)" stroke-width="${maj?1.5:1}"/>`;
-      if(maj)ticks+=`<text x="222" y="${ty+4}" font-family="-apple-system,sans-serif" font-size="11" fill="rgba(255,255,255,0.5)">${u}u</text>`;
-    }
-  } else {
-    const step=0.1;
-    for(let ml=0;ml<=maxMl+0.001;ml+=step){
-      const mlR=Math.round(ml*10)/10;
-      const ty=barrelBot-Math.round((mlR/maxMl)*barrelH);
-      const maj=Math.abs(Math.round(mlR*10)%5)===0;
-      ticks+=`<line x1="198" y1="${ty}" x2="${198+(maj?18:10)}" y2="${ty}" stroke="rgba(255,255,255,0.4)" stroke-width="${maj?1.5:1}"/>`;
-      if(maj)ticks+=`<text x="222" y="${ty+4}" font-family="-apple-system,sans-serif" font-size="11" fill="rgba(255,255,255,0.5)">${mlR.toFixed(1)}</text>`;
-    }
+  const step=0.1;let ticks='';
+  for(let ml=0;ml<=maxMl+0.001;ml+=step){
+    const mlR=Math.round(ml*10)/10;
+    const ty=barrelBot-Math.round((mlR/maxMl)*barrelH);
+    const maj=Math.abs(Math.round(mlR*10)%5)===0;
+    ticks+=`<line x1="198" y1="${ty}" x2="${198+(maj?18:10)}" y2="${ty}" stroke="rgba(255,255,255,0.4)" stroke-width="${maj?1.5:1}"/>`;
+    if(maj)ticks+=`<text x="222" y="${ty+4}" font-family="-apple-system,sans-serif" font-size="11" fill="rgba(255,255,255,0.5)">${mlR.toFixed(1)}</text>`;
   }
   if(totalMl>0)ticks+=`<line x1="115" y1="${fillY}" x2="205" y2="${fillY}" stroke="rgba(78,205,196,0.8)" stroke-width="1.5" stroke-dasharray="4,3"/>`;
   const tickEl=document.getElementById('oil-ticks');
   if(tickEl) tickEl.innerHTML=ticks;
   const lbl=document.getElementById('oil-vol-label');
-  if(lbl){
-    if(oilSyringeType==='insulin' && totalMl>0){
-      const units = Math.round(totalMl*100);
-      lbl.textContent = units+' units ('+totalMl.toFixed(3)+' ml)';
-    } else {
-      lbl.textContent = totalMl>0?totalMl.toFixed(3)+' ml':'— ml';
-    }
-  }
+  if(lbl) lbl.textContent=totalMl>0?totalMl.toFixed(3)+' ml':'— ml';
 }catch(e){console.error("drawOilSyringe error:",e.message,e.stack);}
 }
 
@@ -3006,24 +2626,6 @@ function resetCalc(){
   renderOilCompounds();
 }
 
-function showPinDetail(cid){
-  const c = D.compounds.find(x=>x.id===cid);
-  if(!c) return;
-
-  // Switch to calc tab and load this compound
-  const calcBtn = document.querySelector('.tb[onclick*="calc"]');
-  if(calcBtn) nav('calc', calcBtn);
-
-  // Wait for calc to init then load compound
-  setTimeout(()=>{
-    const sel = document.getElementById('c-compound');
-    if(sel){
-      sel.value = cid;
-      loadFromProtocol();
-    }
-  }, 100);
-}
-
 function initCalc(){
   const sel=document.getElementById('c-compound');
   sel.innerHTML='<option value="">— Select compound to auto-fill —</option>'+
@@ -3038,48 +2640,19 @@ function loadFromProtocol(){
   if(!pid) return;
   const c=D.compounds.find(x=>x.id===pid);
   if(!c) return;
-
-  const isOil = c.cat==='Hormone' || (c.route||'').toLowerCase().includes('im') || (c.route||'').toLowerCase().includes('oil');
-
-  if(isOil){
-    // Switch to oil mode and add this compound to the oil list
-    setCalcMode('oil');
-    // Check if already in list
-    const exists = oilCompounds.find(oc=>oc.pid===pid);
-    if(!exists){
-      oilCompounds.push({
-        id: uid(),
-        pid: pid,
-        name: c.name,
-        conc: c.vialSize||'',   // vialSize = concentration mg/ml for oil
-        unit: c.unit||'mg',
-        dose: c.dose||'',
-        doseUnit: c.unit||'mg',
-        color: c.color||OIL_COLORS[oilCompounds.length%5]
-      });
-    }
-    renderOilCompounds();
-    calcOil();
+  document.getElementById('c-dose').value=c.dose||'';
+  document.getElementById('c-doseUnit').value=c.unit||'mcg';
+  if(c.vialSize){
+    document.getElementById('c-vialAmt').value=c.vialSize;
+    document.getElementById('c-vialUnit').value=c.vialUnit||'mg';
   } else {
-    // Peptide mode
-    setCalcMode('peptide');
-    document.getElementById('c-dose').value=c.dose||'';
-    document.getElementById('c-doseUnit').value=c.unit||'mcg';
-    if(c.vialSize){
-      document.getElementById('c-vialAmt').value=c.vialSize;
-      document.getElementById('c-vialUnit').value=c.vialUnit||'mg';
-    } else {
-      const inv=D.inventory.filter(x=>x.pid===pid);
-      if(inv.length){document.getElementById('c-vialAmt').value=inv[0].qty||'';document.getElementById('c-vialUnit').value=inv[0].unit||'mg';}
-    }
-    if(c.bacWater){
-      document.getElementById('c-bac').value=c.bacWater;
-    } else {
-      const inv2=D.inventory.filter(x=>x.pid===pid&&x.bac);
-      if(inv2.length) document.getElementById('c-bac').value=inv2[0].bac;
-    }
-    lastEdited='dose';updateConcBar();calcFromDose();
+    const inv=D.inventory.filter(x=>x.pid===pid);
+    if(inv.length){document.getElementById('c-vialAmt').value=inv[0].qty||'';document.getElementById('c-vialUnit').value=inv[0].unit||'mg';}
   }
+  // BAC water from inventory (preferred) 
+  const inv2=D.inventory.filter(x=>x.pid===pid&&x.bac);
+  if(inv2.length) document.getElementById('c-bac').value=inv2[0].bac;
+  lastEdited='dose';updateConcBar();calcFromDose();
 }
 
 // Unit conversion: return value in mcg
@@ -3320,7 +2893,7 @@ function manualSave(){
     arr.sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).slice(0,50)
   );
   save();
-  localStorage.setItem('pt_friends_backup', JSON.stringify(D));
+  localStorage.setItem('pt_backup', JSON.stringify(D));
   render();
   const el=document.getElementById('save-confirm');
   el.style.display='block';
