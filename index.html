@@ -405,7 +405,8 @@ background:rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.15)}
 .hist-field-v{font-size:13px;font-weight:600}
 .hist-days{grid-column:1/-1}
 /* Pin badge */
-.pin-badge{font-family:var(–mono);font-weight:700;color:#BDD4FF;white-space:nowrap}
+.pin-badge{font-family:var(–mono);font-weight:700;color:#BDD4FF;white-space:nowrap;
+cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
 /* Expiring cycle (within 7 days of end) */
 .ci.expiring{box-shadow:inset 0 0 0 1px rgba(239,68,68,.55);background:rgba(239,68,68,.10)}
 .exp-badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;
@@ -463,7 +464,7 @@ margin-bottom:12px;font-size:12px;color:#FFC4BA}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:#0033A0" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:#5577CC;margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:#0033A0;opacity:0.5;margin-top:2px">v1.86-TEST · 24 Jul 2026</div>
+      <div style="font-size:9px;color:#0033A0;opacity:0.5;margin-top:2px">v1.88-TEST · 24 Jul 2026</div>
       </div>
     </div>
   </div>
@@ -583,7 +584,7 @@ margin-bottom:12px;font-size:12px;color:#FFC4BA}
   <select class="fs" id="pep-saved-select" onchange="loadSavedDose()" style="margin-bottom:10px">
     <option value="">— Load a saved dose —</option>
   </select>
-  <button class="btn btn-s btn-sm" onclick="saveDose()" style="width:100%">💾 Save Current Dose</button>
+  <button class="btn btn-s btn-sm" onclick="saveDose()" style="width:100%">💾 Save This Dose</button>
 </div>
 ```
 
@@ -1398,7 +1399,7 @@ function rToday(){
       <div class="dot" style="background:${c.color}"></div>
       <div style="flex:1;min-width:0">
         <div class="ci-name">${c.name}${expiring?'<span class="exp-badge">'+expiryBadge(dLeft)+'</span>':''}</div>
-        <div class="ci-sub">${c.dose} ${c.unit} · ${c.route}${pin?' · <span class="pin-badge">'+pin+'</span>':''}</div>
+        <div class="ci-sub">${c.dose} ${c.unit} · ${c.route}${pin?` · <span class="pin-badge" onclick="openCalcFor('${c.id}',event)">${pin}</span>`:''}</div>
       </div>
     </div>`;
   }
@@ -1432,6 +1433,15 @@ function rToday(){
   ta.classList.toggle('hidden',totalDoses===0);
   document.getElementById('tick-chk').classList.toggle('done',allDone);
   document.getElementById('tick-cnt').textContent=`${doneDoses}/${totalDoses} done`;
+}
+
+// Tapping the pin badge opens Calc with that compound already loaded
+function openCalcFor(pid,e){
+  if(e) e.stopPropagation();
+  const btn=document.querySelector('.tb[onclick*="calc"]');
+  if(btn) nav('calc',btn);
+  const sel=document.getElementById('c-compound');
+  if(sel){ sel.value=pid; loadFromProtocol(); }
 }
 
 function quickCheck(pid,slot){
@@ -2175,28 +2185,53 @@ function selectWeekdays(){
   });
 }
 
-// v1.83 — as you type a name, look for a previous protocol under that name
+// v1.83 — typing a name looks for a previous protocol under that name (fuzzy)
 function checkNameHistory(){
   const el=document.getElementById('f-name-history');
   if(!el) return;
   const q=(document.getElementById('f-name').value||'').trim().toLowerCase();
   if(q.length<2){ el.style.display='none'; el.innerHTML=''; return; }
-  const matches=(D.history||[]).filter(h=>((h.name||'').trim().toLowerCase())===q);
+  // fuzzy both ways: "BPC" matches "BPC-157", and "BPC-157" matches "BPC"
+  const matches=(D.history||[]).filter(h=>{
+    const n=(h.name||'').trim().toLowerCase();
+    return n && (n.indexOf(q)>-1 || q.indexOf(n)>-1);
+  });
   if(!matches.length){ el.style.display='none'; el.innerHTML=''; return; }
   const h=matches.sort((a,b)=>new Date(b.savedAt)-new Date(a.savedAt))[0];
   const p=h.snap||{};
   const when=new Date(h.savedAt).toLocaleDateString([],{day:'numeric',month:'short',year:'numeric'});
+  const dur = p.durtype==='weeks'&&p.weeks ? p.weeks+' weeks'
+            : p.durtype==='enddate'&&p.end ? 'until '+p.end
+            : 'Ongoing';
+  const row=(l,v)=>'<div><span style="color:var(--text2)">'+l+':</span> <strong>'+v+'</strong></div>';
   el.style.display='block';
   el.innerHTML=
     '<div style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);'+
-    'border-radius:10px;padding:10px 12px;margin-top:8px">'+
-      '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">'+
-      'Previously run — '+when+'</div>'+
-      '<div style="font-size:13px;font-weight:600;margin-bottom:8px">'+
-      (p.dose||'—')+' '+(p.unit||'')+' · '+(FL[p.freq]||p.freq||'—')+' · '+(p.time||'—')+'</div>'+
-      '<button type="button" class="btn btn-s btn-sm" style="font-size:12px;padding:6px 12px" '+
-      'onclick="applyNameHistory(&quot;'+h.id+'&quot;)">⬇ Use these settings</button>'+
+    'border-radius:10px;padding:11px 12px;margin-top:8px">'+
+      '<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px">'+
+      'Used before</div>'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:2px">'+h.name+'</div>'+
+      '<div style="font-size:11px;color:var(--text2);margin-bottom:8px">Last used '+when+'</div>'+
+      '<div style="font-size:12px;line-height:1.7;margin-bottom:10px">'+
+        row('Dose',(p.dose||'—')+' '+(p.unit||''))+
+        row('Frequency',FL[p.freq]||p.freq||'—')+
+        row('Timing',p.time||'—')+
+        row('Duration',dur)+
+        row('Vial size',p.vialSize?(p.vialSize+' '+(p.vialUnit||'mg')):'—')+
+        row('BAC water',p.bacWater?(p.bacWater+' ml'):'—')+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<button type="button" class="btn btn-p btn-sm" style="font-size:12px;padding:8px 10px;width:100%" '+
+        'onclick="applyNameHistory(&quot;'+h.id+'&quot;)">✅ Load Protocol</button>'+
+        '<button type="button" class="btn btn-s btn-sm" style="font-size:12px;padding:8px 10px;width:100%" '+
+        'onclick="dismissNameHistory()">Start Fresh</button>'+
+      '</div>'+
     '</div>';
+}
+
+function dismissNameHistory(){
+  const el=document.getElementById('f-name-history');
+  if(el){ el.style.display='none'; el.innerHTML=''; }
 }
 
 function applyNameHistory(histId){
@@ -2213,13 +2248,22 @@ function applyNameHistory(histId){
   set('f-timingNotes',p.timingNotes);
   set('f-cat',p.cat||'Peptide');
   set('f-notes',p.notes);
+  set('f-cycle',p.cycle); set('f-pct',p.pct);
   set('f-vialSize',p.vialSize); set('f-vialUnit',p.vialUnit||'mg');
   set('f-bac',p.bacWater);
   setDays(p.days||[]);
+  // Duration comes across, but the start date deliberately stays as today —
+  // this is a new cycle, not a replay of the old one.
+  if(p.durtype==='weeks' && p.weeks){
+    set('f-durtype','weeks'); set('f-weeks',p.weeks);
+  } else if(p.durtype==='enddate'){
+    set('f-durtype','weeks'); set('f-weeks','12');
+  } else {
+    set('f-durtype','ongoing');
+  }
   if(p.color){ buildColors(p.color); document.getElementById('form-dot').style.background=p.color; }
   onFreq(); onDur(); updateEndPreview();
-  const el=document.getElementById('f-name-history');
-  if(el){ el.style.display='none'; el.innerHTML=''; }
+  dismissNameHistory();
 }
 
 function openAdd(){
@@ -2493,7 +2537,7 @@ function setCalcMode(mode){
   document.getElementById('calc-oil').style.display=mode==='oil'?'block':'none';
   document.getElementById('cmode-peptide').classList.toggle('active',mode==='peptide');
   document.getElementById('cmode-oil').classList.toggle('active',mode==='oil');
-  if(mode==='oil'){renderOilCompounds();}
+  if(mode==='oil'){renderOilCompounds();calcOil();}
   if(mode==='peptide'){drawSyringe(currentUnits());}
 }
 
@@ -2555,7 +2599,13 @@ function setOilSyringe(ml,btn){
 }
 function toMgNorm(amount,unit){return unit==='mcg'?amount/1000:amount;}
 function calcOil(){try{
-  if(!oilCompounds.length){const rc=document.getElementById('oil-result-card');if(rc)rc.style.display='none';return;}
+  const syrCard=document.getElementById('oil-syringe-card');
+  if(syrCard) syrCard.style.display='block';
+  if(!oilCompounds.length){
+    const rc=document.getElementById('oil-result-card');if(rc)rc.style.display='none';
+    drawOilSyringe([],0);
+    return;
+  }
   let totalVol=0;let breakdown=[];let anyValid=false;
   oilCompounds.forEach((c,i)=>{
     const conc=parseFloat(c.conc)||0;const dose=parseFloat(c.dose)||0;
@@ -2567,7 +2617,7 @@ function calcOil(){try{
     breakdown.push({name:c.name||'Compound '+(i+1),vol,color:OIL_COLORS[i%5]});
   });
   const rc=document.getElementById('oil-result-card');
-  if(!anyValid){if(rc)rc.style.display='none';return;}
+  if(!anyValid){if(rc)rc.style.display='none';drawOilSyringe([],0);return;}
   if(rc)rc.style.display='block';
   const tv=document.getElementById('oil-total-vol');if(tv)tv.textContent=totalVol.toFixed(3)+' ml';
   // breakdown shown in draw volumes div
@@ -2723,7 +2773,7 @@ function loadSavedStack(){
 function drawOilSyringe(compounds,totalMl){try{
   const maxMl=oilSyringeMaxMl;const barrelBot=426;const barrelH=376;
   const card=document.getElementById('oil-syringe-card');
-  if(card) card.style.display=totalMl>0?'block':'none';
+  if(card) card.style.display='block';
   const stack=document.getElementById('oil-fluid-stack');
   if(!stack) return;
   let y=barrelBot;let html='';
@@ -3231,6 +3281,9 @@ function init(){
 
 // ─── CYCLE END REMINDER ──────────────────────────────────────────────────────
 function getCompoundEndDate(c){
+  // An explicit end date counts regardless of durtype — compounds edited across
+  // versions often carry an end date while durtype still reads 'ongoing'.
+  if(c.end) return c.end;
   if(c.durtype==='enddate' && c.end) return c.end;
   if(c.durtype==='weeks' && c.weeks && c.start){
     const startD = new Date(c.start+'T12:00:00');
