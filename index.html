@@ -577,6 +577,10 @@ tr:active td{background:var(--card2)}
 .fabpick-body{flex:1;min-width:0}
 .fabpick-t{font-size:16px;font-weight:700}
 .fabpick-s{font-size:12px;color:var(--text-secondary);margin-top:1px}
+
+.field-error{ outline:2px solid var(--danger, #EF4444) !important; outline-offset:1px;
+  border-color:var(--danger, #EF4444) !important; animation:fieldErrShake .3s ease; }
+@keyframes fieldErrShake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
 </style>
 </head>
 <body>
@@ -626,7 +630,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 · build b0802.0648</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0802.1017</div>
       </div>
     </div>
   </div>
@@ -4675,25 +4679,51 @@ function kiCollect(){
     vialSize:g('ki-vial')||'', bacWater:g('ki-bac')||''
   };
 }
-async function kiNext(){
+function kiFinishStack(){
+  // §3.1: Finish must save the current entry first (same path as Save & add next),
+  // then close. If the current step is blank (nothing entered), just close.
+  if(kiStepHasEntry()){ kiNext('finish'); return; }
+  closeOv('ov-keyinfo'); _kiMode=null; render();
+  if(_kiStackCount>0) ptAlert('Stack created — open any compound to add finer detail.');
+  _kiStackCount=0;
+}
+function kiStepHasEntry(){
+  // Does the current wizard step have anything worth saving? (name or dose or a chosen compound)
+  const g=id=>{const el=document.getElementById(id);return el?String(el.value||'').trim():'';};
+  return !!(_kiChosenId || g('ki-name') || (g('ki-dose') && parseFloat(g('ki-dose'))>0));
+}
+function kiHighlightField(field){
+  // Map a validator field name to the wizard element id, then highlight + scroll.
+  const map={ name:'ki-name', dose:'ki-dose', unit:'ki-unit', route:'ki-route', freq:'ki-freq',
+    start:'ki-start', end:'ki-end', weeks:'ki-weeks', vialSize:'ki-vial', bacWater:'ki-bac',
+    volPerSpray:'ki-volPerSpray', titration:'ki-titr-tog' };
+  const el=document.getElementById(map[field]||field);
+  if(!el) return;
+  try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){}
+  el.classList.add('field-error');
+  setTimeout(()=>el.classList.remove('field-error'), 2500);
+}
+async function kiNext(after){
+  after = after || 'advance';  // 'advance' = Save & add next; 'finish' = save then close
   const data=kiCollect(); if(!data) return;
 
-  // Same missing-field reminder as the full form — warn about anything that affects
-  // Today, the calculator, syringe amounts or reminders. Not a hard block.
+  // §3.4/§6: canonical validation. An active protocol must be complete & schedulable,
+  // otherwise it won't appear on Today. Block the save, keep the wizard open, and point
+  // at the first missing field with a specific message.
   {
-    const missing=[];
-    if(!data.dose || parseFloat(data.dose)<=0) missing.push('Dose');
-    if(!data.freq) missing.push('Frequency');
-    if(data.durtype!=='ongoing' && !data.start) missing.push('Start date');
-    if(data.durtype!=='ongoing' && !data.end) missing.push('End date');
-    if(!data.vialSize || parseFloat(data.vialSize)<=0) missing.push('Vial size (needed for dose calc)');
-    let routeForCheck = defaultRouteFor(data.name);
-    if(_kiMode==='activate' && _kiActivateId){ const ex=D.compounds.find(x=>x.id===_kiActivateId); if(ex&&ex.route) routeForCheck=ex.route; }
-    const oilish = /oral|topical/i.test(routeForCheck);
-    if(!oilish && (!data.bacWater || parseFloat(data.bacWater)<=0)) missing.push('BAC water (needed for units calc)');
-    if(missing.length){
-      const go = await ptConfirm('Some fields that affect Today, the calculator, syringe amounts and reminders are empty:\n\n• '+missing.join('\n• ')+'\n\nSave anyway and fill them later, or go back now?', 'Missing details', {okText:'Save anyway', cancelText:'Go back & fill'});
-      if(!go) return;
+    // Resolve the route being used (chosen/activate compound keeps its own route).
+    let route = defaultRouteFor(data.name);
+    if(_kiChosenId){ const ex=D.compounds.find(x=>x.id===_kiChosenId); if(ex&&ex.route) route=ex.route; }
+    else if(_kiMode==='activate' && _kiActivateId){ const ex=D.compounds.find(x=>x.id===_kiActivateId); if(ex&&ex.route) route=ex.route; }
+    const draft=Object.assign({}, data, {route});
+    const titrTogV=document.getElementById('ki-titr-tog');
+    if(titrTogV && titrTogV.classList.contains('on')) draft.titration={enabled:true, steps:_titrDraft||[]};
+    const v=validateProtocolDraft(draft, {requireName: !_kiChosenId && _kiMode==='stack'});
+    if(!v.ok){
+      const first=v.errors[0];
+      kiHighlightField(first.field);
+      await ptAlert(first.message, 'Missing information');
+      return;
     }
   }
 
@@ -4726,8 +4756,18 @@ async function kiNext(){
     }
     if(c) snapshotCompound(c,'create');
     save();
+    // §3.1/§6: verify persistence before navigating.
+    const persisted = D.compounds.some(x=>x && x.id===(c&&c.id));
+    if(!persisted){ ptAlert('Could not save this protocol. Please try again.'); return; }
     _kiStackCount=(_kiStackCount||0)+1;
-    // Immediately present a fresh popup for the next compound. No intermediate confirm.
+    if(after==='finish'){
+      // Save complete — now close the wizard.
+      closeOv('ov-keyinfo'); _kiMode=null; render();
+      if(_kiStackCount>0) ptAlert('Stack created — open any compound to add finer detail.');
+      _kiStackCount=0;
+      return;
+    }
+    // advance: present a fresh popup for the next compound.
     _kiIndex++;
     kiRenderStep();
     return;
@@ -4746,11 +4786,6 @@ async function kiNext(){
     save(); render(); closeOv('ov-keyinfo');
     ptAlert(esc(c.name)+' activated. Open it to add extra detail.');
   }
-}
-function kiFinishStack(){
-  closeOv('ov-keyinfo'); _kiMode=null; render();
-  if(_kiStackCount>0) ptAlert('Stack created — open any compound to add finer detail.');
-  _kiStackCount=0;
 }
 function defaultRouteFor(name){
   // Sensible route defaults by name; user can refine in the detail page.
@@ -4909,6 +4944,54 @@ function updateSprayCalc(){
   rr.textContent = txt;
 }
 function fmtNum(n){ if(!Number.isFinite(n)) return '?'; return (Math.round(n*100)/100).toString(); }
+
+// ─── CANONICAL PROTOCOL VALIDATION (§3.4, §6) ────────────
+// One shared validator used by every protocol creation/edit path. Takes a draft
+// object; returns {ok:boolean, errors:[{field, message}]}. Field names map to
+// element ids where practical so callers can highlight/scroll.
+function validateProtocolDraft(d, ctx){
+  ctx=ctx||{};
+  const errors=[];
+  const num=v=>{ const n=parseFloat(v); return Number.isFinite(n)?n:NaN; };
+  const has=v=>v!=null && String(v).trim()!=='';
+  // Name (only required when creating brand-new / add-your-own; activation has it)
+  if(ctx.requireName && !has(d.name)) errors.push({field:'name', message:'Compound name is required.'});
+  // Dose
+  if(!(num(d.dose)>0)) errors.push({field:'dose', message:'Dose is required.'});
+  // Unit
+  if(!has(d.unit)) errors.push({field:'unit', message:'Unit is required.'});
+  // Route
+  if(!has(d.route)) errors.push({field:'route', message:'Administration route is required.'});
+  // Frequency
+  if(!has(d.freq)) errors.push({field:'freq', message:'Frequency is required.'});
+  // Duration: must be ongoing OR have start+end (or weeks)
+  const durtype=d.durtype||(has(d.weeks)||has(d.end)?'weeks':'ongoing');
+  if(durtype!=='ongoing'){
+    if(!has(d.start)) errors.push({field:'start', message:'Start date is required before this protocol can be activated.'});
+    if(!has(d.end) && !has(d.weeks)) errors.push({field:'end', message:'Duration (weeks or end date) is required before this protocol can be activated.'});
+  }
+  // Injectable routes need vial size (for draw calc). Nasal/oral/topical do not.
+  const injectable=isInjectableRoute(d.route);
+  if(injectable){
+    if(!(num(d.vialSize)>0)) errors.push({field:'vialSize', message:'Vial size is required for injectable protocols.'});
+    // BAC water required for reconstituted peptides (not oil-based)
+    if(!isOilBasedRoute(d.route) && !(num(d.bacWater)>0)) errors.push({field:'bacWater', message:'BAC water is required to calculate the dose.'});
+  }
+  // Nasal route needs reconstitution fields
+  if(isSprayRoute(d.route)){
+    if(!(num(d.vialSize)>0)) errors.push({field:'vialSize', message:'Peptide amount is required for nasal spray.'});
+    if(!(num(d.volPerSpray)>0)) errors.push({field:'volPerSpray', message:'Volume per spray is required for nasal spray.'});
+  }
+  // Titration: if enabled, must have at least one valid phase
+  if(d.titration && d.titration.enabled){
+    const steps=(d.titration.steps||[]).filter(st=>num(st.dose)>0 && num(st.weeks)>0);
+    if(!steps.length) errors.push({field:'titration', message:'At least one titration phase (dose + weeks) is required.'});
+  }
+  return {ok:errors.length===0, errors};
+}
+// Route helpers (defensive; centralise route classification).
+function isInjectableRoute(route){ return /subq|sub-q|intramuscular|\bim\b|injection/i.test(route||'') && !isSprayRoute(route); }
+function isOilBasedRoute(route){ return /\bim\b|intramuscular/i.test(route||''); }
 
 // ─── NASAL SPRAY RECONSTITUTION ──────────────────────────
 // Peptide reconstituted with BAC water then brought to final volume with saline.
