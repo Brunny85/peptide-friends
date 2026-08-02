@@ -630,7 +630,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0802.1108</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0802.1135</div>
       </div>
     </div>
   </div>
@@ -1693,6 +1693,9 @@ function sanitizeCompounds(arr){
     if(c.active===undefined||c.active===null) c.active=false;
     if(!Array.isArray(c.days)) c.days=[];
     normalizeSchedule(c);
+    // §5: legacy active records with no trackingStartDate are backfilled from their START
+    // date (preserving prior adherence history), NEVER from today.
+    if(c.active && !c.trackingStartDate) stampTracking(c, 'backfill');
     return c;
   });
 }
@@ -2534,6 +2537,35 @@ function calSelectCompound(){
   rHistByDate();
 }
 // adherence status for one compound on one date: 'taken'|'paused'|'missed'|'none'
+// §5: trackingStartDate marks when the user actually began TRACKING this protocol in the
+// app (i.e. when the record was created/activated), as distinct from the clinical start
+// date, which may be back-dated. Adherence/missed-dose logic must not retroactively mark
+// days before tracking began as "missed" — those are pre-tracking (not assessed).
+// §5: trackingStartDate marks when adherence assessment begins for a protocol. It is
+// distinct from the clinical start date, which may be back-dated. The rules:
+//   - New activation, start today/future  -> trackingStartDate = start (don't assess before start)
+//   - New activation, deliberately back-dated start -> trackingStartDate = today
+//   - Existing legacy active record (no field) -> backfill from START (preserve its history),
+//     NEVER today (which would erase previously-tracked adherence)
+//   - Editing an existing record -> never reset or introduce a new boundary
+// `context` must be 'create' (new activation) or 'edit'/'backfill' (existing record).
+function stampTracking(c, context){
+  if(!c || !c.active) return c;
+  if(c.trackingStartDate) return c;               // already set -> never change (rule 5)
+  const today=localDateStr(new Date());
+  if(context==='create'){
+    // New activation: if start is today/future, track from start; if back-dated, track from today.
+    if(c.start && c.start>today){ c.trackingStartDate=c.start; }      // future start
+    else if(c.start && c.start<today){ c.trackingStartDate=today; }   // back-dated -> today
+    else { c.trackingStartDate = c.start || today; }                  // start == today
+  } else {
+    // Existing legacy record with no field: preserve historical behaviour by anchoring to
+    // its own start date (NOT today), so its prior adherence history is retained.
+    c.trackingStartDate = c.start || today;
+  }
+  return c;
+}
+
 function adherenceStatus(cid, ds){
   const c=D.compounds.find(x=>x.id===cid);
   // reconstruct config as of that date
@@ -2541,6 +2573,9 @@ function adherenceStatus(cid, ds){
   const cfg=snap?snap.snap:c; if(!cfg) return 'none';
   if(cfg.active===false || cfg.freq==='prn') return 'none';
   if(cfg.start && ds<cfg.start) return 'none';
+  // §5: before tracking began, days are not assessed (pre-tracking), never missed.
+  const trackFloor = c && c.trackingStartDate ? c.trackingStartDate : (cfg.start||null);
+  if(trackFloor && ds<trackFloor) return 'none';
   if(cfg.end && ds>cfg.end) return 'none';
   const dow=new Date(ds+'T12:00:00').getDay();
   const sched=(cfg.days&&cfg.days.length)?cfg.days.includes(dow):true;
@@ -3393,6 +3428,7 @@ async function saveForm(){
       color:fColor,active:true,
     });
     // Snapshot on creation so the compound enters the historical timeline.
+    stampTracking(D.compounds[D.compounds.length-1], 'create');
     snapshotCompound(D.compounds[D.compounds.length-1], 'create');
   }
   // Attach titration schedule (if the toggle is on and a valid draft exists).
@@ -4441,6 +4477,8 @@ function checkMissedDoses(){
       if(!sched) return;
       // within active window?
       if(c.start && ds<c.start) return;
+        // §5: don't flag days before tracking began as missed.
+        if(c.trackingStartDate && ds<c.trackingStartDate) return;
       if(c.end && ds>c.end) return;
       const key=c.id+'|'+ds;
       if(confirmed[key]) return; // already confirmed one way or another
@@ -4699,7 +4737,9 @@ function kiRenderStep(existing){
     title.textContent='New protocol '+(_kiIndex+1);
     prog.textContent = _kiStackCount>0 ? (_kiStackCount+' added so far — add another below') : 'First compound of your new stack';
     nextBtn.textContent='Save & add next';
-    if(finishBtn) finishBtn.style.display = _kiStackCount>0 ? 'block' : 'none';
+    // Finish is available from the first entry (§ wizard requirement): a user adding one
+    // compound can save+exit directly without needing "Save & add next" then a blank step.
+    if(finishBtn) finishBtn.style.display='block';
   } else {
     title.textContent='Activate protocol';
     prog.textContent='Set the key info to activate this compound';
@@ -4794,8 +4834,18 @@ function kiScrollToField(field){
   const el=document.getElementById(map[field]||field);
   if(el){ try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){} }
 }
+let _kiSaving=false;
 async function kiNext(after){
   after = after || 'advance';  // 'advance' = Save & add next; 'finish' = save then close
+  if(_kiSaving) return;        // double-submit protection: ignore rapid repeated taps
+  _kiSaving=true;
+  try{
+    await kiNextInner(after);
+  } finally {
+    _kiSaving=false;
+  }
+}
+async function kiNextInner(after){
   const data=kiCollect(); if(!data) return;
 
   // §3.4/§6: canonical validation. An active protocol must be complete & schedulable,
@@ -4847,6 +4897,7 @@ async function kiNext(after){
       if(titr) c.titration=titr;
       D.compounds.push(c);
     }
+    if(c) stampTracking(c,'create');
     if(c) snapshotCompound(c,'create');
     save();
     // §3.1/§6: verify persistence before navigating.
@@ -4875,6 +4926,7 @@ async function kiNext(after){
     if(titrTogA && titrTogA.classList.contains('on') && Array.isArray(_titrDraft) && _titrDraft.length){
       c.titration={ enabled:true, steps:_titrDraft.map(st=>({dose:parseFloat(st.dose)||0, weeks:parseFloat(st.weeks)||0})).filter(st=>st.dose>0&&st.weeks>0) };
     } else { delete c.titration; }
+    stampTracking(c,'create');
     if(typeof startFreshCycle==='function' && !c.start) startFreshCycle(c);
     save(); render(); closeOv('ov-keyinfo');
     ptAlert(esc(c.name)+' activated. Open it to add extra detail.');
