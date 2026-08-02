@@ -626,7 +626,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 · build b0730.1820</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 · build b0802.0648</div>
       </div>
     </div>
   </div>
@@ -1047,7 +1047,7 @@ tr:active td{background:var(--card2)}
       </div>
     </div>
     <div class="fg"><label class="fl">Route of Administration</label>
-      <select class="fs" id="f-route">
+      <select class="fs" id="f-route" onchange="onRouteChange()">
         <option>SubQ Injection</option><option>IM Injection</option><option>Oral</option>
         <option>Nasal Spray</option><option>Topical</option><option>IV</option>
       </select>
@@ -1063,6 +1063,22 @@ tr:active td{background:var(--card2)}
       </div>
       <div><label class="fl">BAC Water (ml)</label>
         <input class="fi" id="f-bac" type="number" step="0.1" placeholder="e.g. 2">
+      </div>
+    </div>
+
+    <!-- Nasal spray reconstitution (shown when route = Nasal Spray) -->
+    <div id="f-spray-block" style="display:none">
+      <div class="fdiv"></div>
+      <div class="fg"><label class="fl">Saline added (ml)</label>
+        <input class="fi" id="f-saline" type="number" step="0.1" placeholder="e.g. 4.5" oninput="updateSprayCalc()">
+        <div class="fhint">BAC water reconstitutes; saline brings it to final spray volume.</div>
+      </div>
+      <div class="fg"><label class="fl">Volume per spray (ml)</label>
+        <input class="fi" id="f-volPerSpray" type="number" step="0.01" placeholder="e.g. 0.1" oninput="updateSprayCalc()">
+      </div>
+      <div class="fg" id="f-spray-readout" style="display:none;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:12px;padding:12px 14px">
+        <div style="font-size:13px;color:var(--text-secondary)">Reconstitution result</div>
+        <div id="f-spray-result" style="font-size:15px;font-weight:600;margin-top:4px"></div>
       </div>
     </div>
     <div class="fg"><label class="fl">Dosing Notes</label>
@@ -1152,7 +1168,7 @@ tr:active td{background:var(--card2)}
     <div class="fdiv"></div>
     <div class="fsec">③ Duration &amp; Cycle</div>
     <div class="fr fg">
-      <div><label class="fl">Start Date</label><input class="fi" id="f-start" type="date" onchange="updateEndPreview()"></div>
+      <div><label class="fl">Start Date</label><input class="fi" id="f-start" type="date" onchange="onStartInput()"></div>
       <div><label class="fl">Duration</label>
         <select class="fs" id="f-durtype" onchange="onDur()">
           <option value="ongoing">Ongoing</option>
@@ -1474,21 +1490,23 @@ const FL={daily:'Daily',bid:'Twice Daily',tid:'Three Times Daily',eod:'Every Oth
 
 // ─── DEFAULT COMPOUNDS ───────────────────────────────────────
 const DEFAULTS=[
-  {id:'p1', name:'BPC-157',              cat:'Peptide',       dose:500,  unit:'mcg',route:'SubQ Injection',freq:'daily',   days:[],         time:'Both',clock:'',timingNotes:'',doseNotes:'',start:'2026-06-23',durtype:'weeks',  weeks:'4',end:'',          cycle:'',       pct:'',notes:'',color:'#34D399',active:true},
-  {id:'p2', name:'Retatutride',          cat:'Peptide',       dose:500,  unit:'mcg',route:'SubQ Injection',freq:'3xweek',  days:[2,4,6],    time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-05-18',durtype:'enddate',weeks:'', end:'2026-06-02',cycle:'',       pct:'',notes:'',color:'#4ECDC4',active:true},
-  {id:'p3', name:'TB-500',               cat:'Peptide',       dose:700,  unit:'mcg',route:'SubQ Injection',freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-06-23',durtype:'weeks',  weeks:'4',end:'',          cycle:'',       pct:'',notes:'',color:'#A78BFA',active:true},
-  {id:'p4', name:'NAD+',                 cat:'Supplement',    dose:0,    unit:'mg', route:'Oral',           freq:'3xweek',  days:[1,3,5],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#FDE047',active:false},
+  {id:'p1', name:'BPC-157',              cat:'Peptide',       dose:500,  unit:'mcg',route:'SubQ Injection',freq:'daily',   days:[],         time:'Both',clock:'',timingNotes:'',doseNotes:'',start:'2026-06-23',durtype:'weeks',  weeks:'4',end:'',          cycle:'',       pct:'',notes:'',color:'#34D399',active:false},
+  {id:'p2', name:'Retatutride',          cat:'Peptide',       dose:500,  unit:'mcg',route:'SubQ Injection',freq:'3xweek',  days:[2,4,6],    time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-05-18',durtype:'enddate',weeks:'', end:'2026-06-02',cycle:'',       pct:'',notes:'',color:'#4ECDC4',active:false},
+  {id:'p3', name:'TB-500',               cat:'Peptide',       dose:700,  unit:'mcg',route:'SubQ Injection',freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-06-23',durtype:'weeks',  weeks:'4',end:'',          cycle:'',       pct:'',notes:'',color:'#A78BFA',active:false},
+  {id:'p4', name:'NAD+',                 cat:'Peptide',       dose:0,    unit:'mg', route:'SubQ Injection',           freq:'3xweek',  days:[1,3,5],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#FDE047',active:false},
   {id:'p5', name:'MOTSc',                cat:'Peptide',       dose:5,    unit:'mg', route:'SubQ Injection', freq:'3xweek',  days:[1,3,5],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#FB923C',active:false},
   {id:'p6', name:'Selank',               cat:'Nootropic',     dose:200,  unit:'mcg',route:'Nasal Spray',   freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#60A5FA',active:false},
-  {id:'p7', name:'GHK-Cu',               cat:'Peptide',       dose:2,    unit:'mg', route:'SubQ Injection', freq:'5xweek',  days:[1,2,3,4,5],time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'enddate', weeks:'',end:'2026-07-02',cycle:'',       pct:'',notes:'',color:'#F59E0B',active:true},
-  {id:'p8', name:'Glutathione',          cat:'Supplement',    dose:200,  unit:'mg', route:'Oral',           freq:'3xweek',  days:[1,3,6],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#2DD4BF',active:false},
-  {id:'p9', name:'KPV',                  cat:'Peptide',       dose:500,  unit:'mcg',route:'Oral',           freq:'daily',   days:[],         time:'Any', clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#94A3B8',active:false},
+  {id:'p7', name:'GHK-Cu',               cat:'Peptide',       dose:2,    unit:'mg', route:'SubQ Injection', freq:'5xweek',  days:[1,2,3,4,5],time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'enddate', weeks:'',end:'2026-07-02',cycle:'',       pct:'',notes:'',color:'#F59E0B',active:false},
+  {id:'p8', name:'Glutathione',          cat:'Peptide',       dose:200,  unit:'mg', route:'SubQ Injection',           freq:'3xweek',  days:[1,3,6],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#2DD4BF',active:false},
+  {id:'p9', name:'KPV',                  cat:'Peptide',       dose:500,  unit:'mcg',route:'SubQ Injection',           freq:'daily',   days:[],         time:'Any', clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#94A3B8',active:false},
   {id:'p10',name:'Epithalon',            cat:'Peptide',       dose:5000, unit:'mcg',route:'SubQ Injection', freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#818CF8',active:false},
-  {id:'p11',name:'Test-E',               cat:'Hormone',       dose:62.5, unit:'mg', route:'IM Injection',   freq:'2xweek',  days:[2,6],      time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-06-21',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#EF4444',active:true},
+  {id:'p11',name:'Test-E',               cat:'Hormone',       dose:62.5, unit:'mg', route:'IM Injection',   freq:'2xweek',  days:[2,6],      time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-06-21',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#EF4444',active:false},
   {id:'p12',name:'Deca',                 cat:'Hormone',       dose:62.5, unit:'mg', route:'IM Injection',   freq:'weekly',  days:[2],        time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'enddate', weeks:'',end:'2026-06-04',cycle:'',       pct:'',notes:'',color:'#F472B6',active:false},
-  {id:'p13',name:'Human Growth Hormone', cat:'Growth Hormone',dose:3,    unit:'IU', route:'SubQ Injection', freq:'4xweek',  days:[1,2,3,4],  time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-01-12',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#60A5FA',active:true},
+  {id:'p13',name:'Human Growth Hormone', cat:'Growth Hormone',dose:3,    unit:'IU', route:'SubQ Injection', freq:'4xweek',  days:[1,2,3,4],  time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'2026-01-12',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#60A5FA',active:false},
   {id:'p14',name:'MT2',                   cat:'Peptide',       dose:0,    unit:'mg', route:'SubQ Injection', freq:'eod',     days:[1,3,5],    time:'BedTime',clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#F472B6',active:false},
-  {id:'p15',name:'HCG',                   cat:'Supplement',    dose:0,    unit:'mg', route:'Oral',           freq:'daily',   days:[],         time:'AM',     clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#818CF8',active:false},
+  {id:'p15',name:'HCG',                   cat:'Peptide',       dose:500,  unit:'IU', route:'SubQ Injection',           freq:'daily',   days:[],         time:'AM',     clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#818CF8',active:false},
+  {id:'p16', name:'IPA/CJC',              cat:'Peptide',       dose:100,  unit:'mcg',route:'SubQ Injection', freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#A78BFA',active:false},
+  {id:'p17', name:'Semax',               cat:'Nootropic',     dose:200,  unit:'mcg',route:'Nasal Spray',   freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#F472B6',active:false}
 ];
 
 // Return the default compounds with ACTIVE ones re-anchored to be currently live.
@@ -1514,6 +1532,7 @@ function freshDefaults(){
 // ─── STATE ───────────────────────────────────────────────────
 let D={compounds:[],logs:[],inventory:[],history:[],skips:[]};
 let viewDate=''; // set in init()
+let _firstRun=false;
 let fColor=COLORS[0], fSite='';
 
 function save(){
@@ -1662,6 +1681,16 @@ function runMigration(sourcePayload){
 }
 
 let _migrationFlags=[]; window._calYM=null; window._calSelected=null; let _migrationError=null; let _blockAutosave=false; let _recoveryNotice=null;
+function sanitizeCompounds(arr){
+  // Defensive: drop null/malformed entries and ensure required fields exist, so
+  // data written by an earlier buggy build (e.g. a null slot) can't crash the app.
+  if(!Array.isArray(arr)) return [];
+  return arr.filter(c=>c && typeof c==='object' && c.id).map(c=>{
+    if(c.active===undefined||c.active===null) c.active=false;
+    if(!Array.isArray(c.days)) c.days=[];
+    return c;
+  });
+}
 function load(){
   // Source selection: protocol_data is authoritative; pt_backup is recovery only.
   // No log-count heuristic. Future schemas are rejected, not loaded.
@@ -1696,7 +1725,7 @@ function load(){
       }
     }
     if(_migrationError){ return; }   // do not commit a failed-migration candidate
-    D.compounds = best.compounds;
+    D.compounds = sanitizeCompounds(best.compounds);
     D.logs      = best.logs      || [];
     D.inventory = best.inventory || [];
     D.history   = best.history   || [];
@@ -1708,6 +1737,7 @@ function load(){
   } else {
     D.compounds = freshDefaults();
     D.inventory = defaultInventory();
+    _firstRun = true;
     save();
   }
 }
@@ -1945,6 +1975,14 @@ function pinBadge(c){
   const vs=parseFloat(c.vialSize), bac=parseFloat(c.bacWater), dose=parseFloat(effectiveDose(c));
   if(!vs||!dose) return '';
   const doseMcg=toMcg(dose, c.unit);
+  // Nasal spray: show sprays-per-dose instead of a syringe amount.
+  if(isSprayRoute(c.route)){
+    const r=sprayCalc({peptideAmt:c.vialSize, peptideUnit:c.vialUnit||'mg', bacWater:c.bacWater, saline:c.saline, volPerSpray:c.volPerSpray, doseMcg:dose, doseUnit:c.unit});
+    if(r.ok && r.spraysRounded!=null && r.spraysRounded>0){
+      return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M9 11V6a3 3 0 0 1 6 0v5M7 11h10v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z"/></svg> '+fmtNum(r.spraysRounded)+' spray'+(r.spraysRounded===1?'':'s');
+    }
+    return '';
+  }
   if(isOilBased(c)){
     const concMcg=toMcg(vs, c.vialUnit||'mg');
     if(!concMcg) return '';
@@ -2942,6 +2980,24 @@ function onDur(){
   if(ongoing){ if(w) w.value=''; if(e) e.value=''; }
   updateEndPreview();
 }
+function onStartInput(){
+  const start=document.getElementById('f-start').value;
+  const weeks=document.getElementById('f-weeks').value;
+  const end=document.getElementById('f-end').value;
+  if(start && weeks){
+    // Weeks already chosen: the end date follows from the (new) start date.
+    document.getElementById('f-end').value = calcEndFromWeeks(start, weeks);
+    const dt=document.getElementById('f-durtype'); if(dt.value==='ongoing') dt.value='weeks';
+  } else if(start && end && !weeks){
+    // End already chosen but no weeks: derive weeks from start+end.
+    const d0=new Date(start+'T12:00:00'), d1=new Date(end+'T12:00:00');
+    if(!isNaN(d0)&&!isNaN(d1)&&d1>=d0){
+      document.getElementById('f-weeks').value=Math.max(1,Math.round((d1-d0)/(86400000*7)));
+      const dt=document.getElementById('f-durtype'); if(dt.value==='ongoing') dt.value='weeks';
+    }
+  }
+  updateEndPreview();
+}
 function onWeeksInput(){
   // Weeks entered -> auto-populate end date, and switch durtype to fixed.
   const start=document.getElementById('f-start').value;
@@ -2977,11 +3033,19 @@ function calcEndFromWeeks(start,weeks){
 function updateEndPreview(){
   const el=document.getElementById('f-end-preview');
   if(!el) return;
-  const end=calcEndFromWeeks(document.getElementById('f-start').value,
-                             document.getElementById('f-weeks').value);
-  el.textContent = end
-    ? 'Ends: '+new Date(end+'T12:00:00').toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'})
-    : '';
+  const start=document.getElementById('f-start').value;
+  const weeks=document.getElementById('f-weeks').value;
+  const end=calcEndFromWeeks(start, weeks);
+  if(end && start){
+    const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString([],{day:'numeric',month:'short',year:'numeric'});
+    el.textContent = fmt(start)+' + '+weeks+' week'+(weeks==1?'':'s')+' = '+fmt(end);
+  } else if(end){
+    el.textContent = 'Ends: '+new Date(end+'T12:00:00').toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'});
+  } else if(weeks && !start){
+    el.textContent = 'Enter a start date to calculate the end date.';
+  } else {
+    el.textContent='';
+  }
 }
 
 function getDays(){
@@ -3151,6 +3215,9 @@ function openEdit(pid){
   document.getElementById('f-vialSize').value=c.vialSize||'';
   document.getElementById('f-vialUnit').value=c.vialUnit||'mg';
   document.getElementById('f-bac').value=c.bacWater||'';
+  document.getElementById('f-saline').value=c.saline||'';
+  document.getElementById('f-volPerSpray').value=c.volPerSpray||'';
+  onRouteChange();
   document.getElementById('f-active').checked=c.active;
   buildColors(c.color);
   document.getElementById('form-dot').style.background=c.color;
@@ -3233,6 +3300,8 @@ async function saveForm(){
       vialSize:document.getElementById('f-vialSize').value,
       vialUnit:document.getElementById('f-vialUnit').value,
       bacWater:document.getElementById('f-bac').value,
+      saline:document.getElementById('f-saline').value,
+      volPerSpray:document.getElementById('f-volPerSpray').value,
       color:fColor,
       active:document.getElementById('f-active').checked,
     };
@@ -3260,6 +3329,8 @@ async function saveForm(){
       vialSize:document.getElementById('f-vialSize').value,
       vialUnit:document.getElementById('f-vialUnit').value,
       bacWater:document.getElementById('f-bac').value,
+      saline:document.getElementById('f-saline').value,
+      volPerSpray:document.getElementById('f-volPerSpray').value,
       color:fColor,active:true,
     });
     // Snapshot on creation so the compound enters the historical timeline.
@@ -3961,6 +4032,7 @@ async function masterReset(){
   _migrationError=null; _blockAutosave=false; _recoveryNotice=null;
   render();
   await ptAlert('Reset complete. All app data was erased and the default compounds restored.');
+  offerProtocolSetup();
 }
 
 async function checkBackupReminder(){try{
@@ -4285,6 +4357,7 @@ function init(){
   }catch(e){}
   // Check for cycle end reminders
   initTodaySwipe();
+  if(_firstRun){ _firstRun=false; setTimeout(offerProtocolSetup, 600); }
   setTimeout(checkCycleEndReminders, 800);
   setTimeout(checkMissedDoses, 1200);
 }
@@ -4452,6 +4525,49 @@ function kiSetDaysArr(arr){
   });
 }
 
+
+let _kiChosenId=null;  // when a pre-loaded compound is picked, its id (activate, don't duplicate)
+function kiPopulateChooser(){
+  const sel=document.getElementById('ki-choose');
+  const wrap=document.getElementById('ki-choose-wrap');
+  if(!sel||!wrap) return;
+  // list inactive compounds (the pre-loaded library not yet in the user's protocol)
+  const avail=(D.compounds||[]).filter(c=>c.active===false);
+  if(_kiMode==='stack' && avail.length){
+    wrap.style.display='block';
+    sel.innerHTML='<option value="">\u2014 Add your own \u2014</option>'+
+      avail.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    sel.value='';
+  } else {
+    wrap.style.display='none';
+  }
+}
+function kiChooseCompound(){
+  const id=document.getElementById('ki-choose').value;
+  _kiChosenId = id || null;
+  if(!id){
+    // "Add your own" — clear to blank for a new compound
+    ['ki-name','ki-dose','ki-vial','ki-bac','ki-saline','ki-volPerSpray'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
+    return;
+  }
+  const c=D.compounds.find(x=>x.id===id); if(!c) return;
+  // pre-fill the wizard fields from the chosen pre-loaded compound
+  const set=(f,v)=>{const el=document.getElementById(f);if(el&&v!=null)el.value=v;};
+  set('ki-name', c.name); set('ki-dose', c.dose); set('ki-unit', c.unit||'mcg');
+  set('ki-freq', c.freq||'daily'); set('ki-vial', c.vialSize); set('ki-bac', c.bacWater);
+  set('ki-time', (['AM','PM','Both'].includes(c.time)?c.time:'AM'));
+  if(c.start) set('ki-start', c.start);
+  kiSetDaysArr(c.days||[]);
+  if(typeof kiFreqChanged==='function') kiFreqChanged();
+}
+
+
+// Offer a guided protocol setup (used after Master Reset and on first run).
+async function offerProtocolSetup(){
+  const go = await ptConfirm('Would you like to set up your protocol now? You can pick from the pre-loaded compounds or add your own, one at a time.', 'Set up your protocol', {okText:'Start setup', cancelText:"I'll do it later"});
+  if(go) kiOpenStack();
+}
+
 function kiOpenStack(){
   _kiMode='stack'; _kiQueue=[{}]; _kiIndex=0; _kiActivateId=null;
   kiRenderStep();
@@ -4482,6 +4598,7 @@ function kiPopulateFrom(){
   const set=(id,val)=>{ const el=document.getElementById(id); if(el&&val!=null) el.value=val; };
   set('ki-name', sn.name); set('ki-dose', sn.dose); set('ki-unit', sn.unit);
   set('ki-freq', sn.freq); set('ki-vial', sn.vialSize); set('ki-bac', sn.bacWater);
+  if(['AM','PM','Both'].includes(sn.time)) set('ki-time', sn.time);
   if(sn.weeks) set('ki-weeks', sn.weeks);
   kiSetDaysArr(sn.days||[]);
   kiFreqChanged();
@@ -4493,10 +4610,15 @@ function kiRenderStep(existing){
   const nextBtn=document.getElementById('ki-next');
   // clear fields
   ['ki-name','ki-dose','ki-vial','ki-bac','ki-start','ki-weeks','ki-end'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // Default start date to today (so a new protocol starts now unless changed).
+  { const st=document.getElementById('ki-start'); if(st){ st.value=(typeof localDateStr==='function')?localDateStr(new Date()):new Date().toISOString().slice(0,10); } }
   document.getElementById('ki-unit').value='mcg';
   document.getElementById('ki-freq').value='daily';
+  document.getElementById('ki-time').value='AM';
   document.getElementById('ki-populate').value='';
   kiSetDaysArr([]); // clear day tickboxes
+  _kiChosenId=null;
+  kiPopulateChooser();
   kiResetTitration();
   setTimeout(kiFreqChanged,0);
   const finishBtn=document.getElementById('ki-finish');
@@ -4514,6 +4636,7 @@ function kiRenderStep(existing){
       const set=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null) el.value=v; };
       set('ki-name', existing.name); set('ki-dose', existing.dose); set('ki-unit', existing.unit||'mcg');
       set('ki-freq', existing.freq||'weekly'); set('ki-vial', existing.vialSize); set('ki-bac', existing.bacWater);
+      set('ki-time', (['AM','PM','Both'].includes(existing.time)?existing.time:'AM'));
       set('ki-start', existing.start); set('ki-weeks', existing.weeks); set('ki-end', existing.end);
       kiSetDaysArr(existing.days||[]);
       kiLoadTitration(existing);
@@ -4546,7 +4669,8 @@ function kiCollect(){
   const start=g('ki-start'), weeks=g('ki-weeks'), end=g('ki-end');
   return {
     name, dose:parseFloat(g('ki-dose'))||0, unit:g('ki-unit'),
-    freq:g('ki-freq'), days:kiGetDays(), start:start||'', weeks:weeks||'', end:end||'',
+    freq:g('ki-freq'), days:kiGetDays(), time:g('ki-time')||'AM',
+    start:start||'', weeks:weeks||'', end:end||'',
     durtype: (weeks||end)?'weeks':'ongoing',
     vialSize:g('ki-vial')||'', bacWater:g('ki-bac')||''
   };
@@ -4574,18 +4698,33 @@ async function kiNext(){
   }
 
   if(_kiMode==='stack'){
-    // create the compound now
-    const c={ id:uid(), name:data.name, dose:data.dose, unit:data.unit, freq:data.freq,
-      route:defaultRouteFor(data.name), days:data.days||[], time:timeForFreq(data.freq), start:data.start, weeks:data.weeks, end:data.end,
-      durtype:data.durtype, vialSize:data.vialSize, bacWater:data.bacWater, active:true,
-      color: (typeof COLORS!=='undefined' && COLORS.length) ? COLORS[D.compounds.length % COLORS.length] : '#4B96E6' };
-    // attach titration if toggled on
+    // Attach titration if toggled on (shared by both new + chosen paths).
     const titrTog=document.getElementById('ki-titr-tog');
-    if(titrTog && titrTog.classList.contains('on') && Array.isArray(_titrDraft) && _titrDraft.length){
-      c.titration={ enabled:true, steps:_titrDraft.map(st=>({dose:parseFloat(st.dose)||0, weeks:parseFloat(st.weeks)||0})).filter(st=>st.dose>0&&st.weeks>0) };
+    const titr = (titrTog && titrTog.classList.contains('on') && Array.isArray(_titrDraft) && _titrDraft.length)
+      ? { enabled:true, steps:_titrDraft.map(st=>({dose:parseFloat(st.dose)||0, weeks:parseFloat(st.weeks)||0})).filter(st=>st.dose>0&&st.weeks>0) }
+      : null;
+    let c;
+    if(_kiChosenId){
+      // A pre-loaded compound was chosen: activate + update the EXISTING one (no duplicate).
+      c=D.compounds.find(x=>x.id===_kiChosenId);
+      if(c){
+        Object.assign(c, { dose:data.dose, unit:data.unit, freq:data.freq,
+          days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')),
+          start:data.start, weeks:data.weeks, end:data.end, durtype:data.durtype,
+          vialSize:data.vialSize, bacWater:data.bacWater, active:true });
+        if(titr) c.titration=titr; else delete c.titration;
+      }
     }
-    D.compounds.push(c);
-    snapshotCompound(c,'create');
+    if(!c){
+      // "Add your own" (or chosen id not found): create a new compound.
+      c={ id:uid(), name:data.name, dose:data.dose, unit:data.unit, freq:data.freq,
+        route:defaultRouteFor(data.name), days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')), start:data.start, weeks:data.weeks, end:data.end,
+        durtype:data.durtype, vialSize:data.vialSize, bacWater:data.bacWater, active:true,
+        color: (typeof COLORS!=='undefined' && COLORS.length) ? COLORS[D.compounds.length % COLORS.length] : '#4B96E6' };
+      if(titr) c.titration=titr;
+      D.compounds.push(c);
+    }
+    if(c) snapshotCompound(c,'create');
     save();
     _kiStackCount=(_kiStackCount||0)+1;
     // Immediately present a fresh popup for the next compound. No intermediate confirm.
@@ -4596,7 +4735,7 @@ async function kiNext(){
     // activate mode: update the compound + activate
     const c=D.compounds.find(x=>x.id===_kiActivateId); if(!c){ closeOv('ov-keyinfo'); return; }
     snapshotCompound(c,'edit');
-    Object.assign(c, { name:data.name, dose:data.dose, unit:data.unit, freq:data.freq, days:data.days||[], time:timeForFreq(data.freq),
+    Object.assign(c, { name:data.name, dose:data.dose, unit:data.unit, freq:data.freq, days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')),
       start:data.start, weeks:data.weeks, end:data.end, durtype:data.durtype,
       vialSize:data.vialSize, bacWater:data.bacWater, active:true });
     const titrTogA=document.getElementById('ki-titr-tog');
@@ -4740,6 +4879,59 @@ function renderTitrSummary(){
   sum.innerHTML=_titrDraft.map(s=>`${s.dose}${unit} × ${s.weeks}wk`).join(' → ')+`<br><span style="color:var(--text-muted)">${total} weeks total</span>`;
   sum.style.display='block';
 }
+
+
+// ─── SPRAY-MODE FORM WIRING ──────────────────────────
+function onRouteChange(){
+  const route=document.getElementById('f-route').value;
+  const block=document.getElementById('f-spray-block');
+  if(block) block.style.display = isSprayRoute(route) ? 'block' : 'none';
+  if(isSprayRoute(route)) updateSprayCalc();
+}
+function updateSprayCalc(){
+  const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  const r=sprayCalc({
+    peptideAmt:g('f-vialSize'), peptideUnit:g('f-vialUnit'),
+    bacWater:g('f-bac'), saline:g('f-saline'),
+    volPerSpray:g('f-volPerSpray'),
+    doseMcg:g('f-dose'), doseUnit:g('f-unit')
+  });
+  const ro=document.getElementById('f-spray-readout');
+  const rr=document.getElementById('f-spray-result');
+  if(!ro||!rr) return;
+  if(!r.ok){ ro.style.display='none'; return; }
+  ro.style.display='block';
+  let txt = fmtNum(r.mcgPerSpray)+' mcg per spray (final volume '+fmtNum(r.finalVolume)+' ml)';
+  if(r.sprays!=null){
+    txt += ' — your dose = '+fmtNum(r.spraysRounded)+' spray'+(r.spraysRounded===1?'':'s');
+    if(Math.abs(r.sprays-r.spraysRounded)>0.01) txt+=' (≈'+fmtNum(r.sprays)+')';
+  }
+  rr.textContent = txt;
+}
+function fmtNum(n){ if(!Number.isFinite(n)) return '?'; return (Math.round(n*100)/100).toString(); }
+
+// ─── NASAL SPRAY RECONSTITUTION ──────────────────────────
+// Peptide reconstituted with BAC water then brought to final volume with saline.
+// Dose is entered in mcg; the app reports mcg-per-spray and sprays-per-dose.
+function sprayCalc({peptideAmt, peptideUnit, bacWater, saline, finalVolume, volPerSpray, doseMcg, doseUnit}){
+  const fv = (finalVolume!=null && parseFloat(finalVolume)>0) ? parseFloat(finalVolume)
+             : ((parseFloat(bacWater)||0)+(parseFloat(saline)||0));
+  const pep = parseFloat(peptideAmt);
+  const vps = parseFloat(volPerSpray);
+  let dose = parseFloat(doseMcg);
+  // normalise peptide amount to mcg
+  let pepMcg = pep;
+  if(peptideUnit==='mg') pepMcg = pep*1000;
+  // normalise dose to mcg if given in mg
+  if(doseUnit==='mg' && Number.isFinite(dose)) dose = dose*1000;
+  if(!(fv>0) || !(pep>0) || !(vps>0)) return {ok:false};
+  const concMcgPerMl = pepMcg / fv;
+  const mcgPerSpray = concMcgPerMl * vps;
+  const sprays = (Number.isFinite(dose) && dose>0) ? dose / mcgPerSpray : null;
+  return {ok:true, finalVolume:fv, concMcgPerMl, mcgPerSpray, sprays,
+          spraysRounded: sprays!=null ? Math.round(sprays*2)/2 : null};
+}
+function isSprayRoute(route){ return /nasal/i.test(route||''); }
 
 // ─── TITRATION ENGINE ──────────────────────────
 // A compound may carry: titration = { enabled:true, steps:[{dose, weeks}, ...] }.
@@ -5099,6 +5291,13 @@ window.PT_debug = {
         <select class="fs" id="ki-populate" onchange="kiPopulateFrom()"><option value="">— Start blank —</option></select>
       </div>
 
+      <div class="fg" id="ki-choose-wrap" style="display:none">
+        <label class="fl">Choose a compound</label>
+        <select class="fs" id="ki-choose" onchange="kiChooseCompound()">
+          <option value="">— Add your own —</option>
+        </select>
+      </div>
+
       <label class="fl">Name</label>
       <input class="fi" id="ki-name" placeholder="e.g. BPC-157" style="margin-bottom:14px">
 
@@ -5139,6 +5338,13 @@ window.PT_debug = {
         <button type="button" class="btn btn-s btn-sm" style="flex:1;font-size:12px;padding:7px" onclick="kiSetDays('none')">None</button>
         <button type="button" class="btn btn-s btn-sm" style="flex:1;font-size:12px;padding:7px" onclick="kiSetDays('weekdays')">Weekdays</button>
       </div>
+
+      <label class="fl">Time of day</label>
+      <select class="fs" id="ki-time" style="margin-bottom:14px">
+        <option value="AM">Morning (AM)</option>
+        <option value="PM">Evening (PM)</option>
+        <option value="Both">AM &amp; PM (Both)</option>
+      </select>
 
       <div class="fg">
         <div style="display:flex;align-items:center;justify-content:space-between">
