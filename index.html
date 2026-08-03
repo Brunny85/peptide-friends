@@ -630,7 +630,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0803.0912</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0803.1912</div>
       </div>
     </div>
   </div>
@@ -1769,6 +1769,17 @@ const dAgo=n=>{const d=new Date();d.setDate(d.getDate()-n);return localDateStr(d
 // A compound shows today if:
 // - active
 // - days array is empty (means every day) OR today's DOW is in the days array
+// One-time repair: an "ongoing" protocol must not carry an end date. Records
+// saved by the wizard before b0803.1912 could hold both, which made isDue()
+// expire them and drop them from Today. Only touches that exact contradiction.
+function normalizeDurations(){
+  let fixed=0;
+  (D.compounds||[]).forEach(c=>{
+    if(c && c.durtype==='ongoing' && (c.end || c.weeks)){ c.end=''; c.weeks=''; fixed++; }
+  });
+  if(fixed) save();
+  return fixed;
+}
 function isDue(c){
   if(!c.active||c.freq==='prn') return false;
   // Check end date - if compound has expired, don't show it
@@ -2366,6 +2377,12 @@ function expiryBadge(d){
 
 // Oil-based compounds are pre-mixed: vialSize is mg/ml, not vial content
 function isOilBased(c){
+  // An explicit formulation, when present, is authoritative. Legacy compounds
+  // (schema <= 2, no formulation field) fall back to the old category/route
+  // inference so nothing that already worked changes behaviour.
+  const f=(c.formulation||'').toLowerCase();
+  if(f==='oil') return true;
+  if(f==='reconstituted') return false;
   const cat=(c.cat||'').toLowerCase();
   const route=(c.route||'').toLowerCase();
   return cat==='hormone' || route.indexOf('oil')>-1 || route.indexOf('im injection')>-1;
@@ -4836,6 +4853,7 @@ function init(){
   // Show today tab by default
   document.getElementById('pg-today').classList.remove('hidden');
   load();
+  normalizeDurations();   // repair ongoing-protocols that carry a stale end date
   checkBackupReminder();
   document.getElementById('hdrDate').textContent=new Date().toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
   viewDate=tod();
@@ -5041,6 +5059,7 @@ function kiChooseCompound(){
   if(!id){
     // "Add your own" — clear to blank for a new compound
     ['ki-name','ki-dose','ki-vial','ki-bac','ki-saline','ki-volPerSpray'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
+    kiApplyRouteForm(null);
     return;
   }
   const c=D.compounds.find(x=>x.id===id); if(!c) return;
@@ -5048,6 +5067,7 @@ function kiChooseCompound(){
   const set=(f,v)=>{const el=document.getElementById(f);if(el&&v!=null)el.value=v;};
   set('ki-name', c.name); set('ki-dose', c.dose); set('ki-unit', c.unit||'mcg');
   set('ki-freq', c.freq||'daily'); set('ki-vial', c.vialSize); set('ki-bac', c.bacWater);
+  set('ki-saline', c.saline); set('ki-volPerSpray', c.volPerSpray); kiApplyRouteForm(c);
   // Normalize a possibly-contradictory stored schedule before displaying it.
   { const nc=normalizeSchedule({freq:c.freq, time:c.time}); set('ki-freq', nc.freq||'daily'); set('ki-time', (['AM','PM','Both'].includes(nc.time)?nc.time:'AM')); }
   // §3: inactive preloaded compound → start defaults to today (not a stale stored date).
@@ -5073,6 +5093,13 @@ function kiSetDurtype(t){
   const ww=document.getElementById('ki-weeks-wrap'), ew=document.getElementById('ki-end-wrap');
   if(ww) ww.style.display = (t==='weeks')?'block':'none';
   if(ew) ew.style.display = (t==='weeks')?'block':'none';
+  // Hiding is not enough: a value left in a hidden input was still collected and
+  // saved, so an "ongoing" protocol acquired an end date and isDue() expired it.
+  // Clear them, exactly as onDur() does in the full editor.
+  if(t==='ongoing'){
+    const w=document.getElementById('ki-weeks'), e=document.getElementById('ki-end');
+    if(w) w.value=''; if(e) e.value='';
+  }
 }
 function kiOpenStack(){
   _kiMode='stack'; _kiQueue=[{}]; _kiIndex=0; _kiActivateId=null;
@@ -5104,6 +5131,7 @@ function kiPopulateFrom(){
   const set=(id,val)=>{ const el=document.getElementById(id); if(el&&val!=null) el.value=val; };
   set('ki-name', sn.name); set('ki-dose', sn.dose); set('ki-unit', sn.unit);
   set('ki-freq', sn.freq); set('ki-vial', sn.vialSize); set('ki-bac', sn.bacWater);
+  set('ki-saline', sn.saline); set('ki-volPerSpray', sn.volPerSpray); kiApplyRouteForm(sn);
   if(['AM','PM','Both'].includes(sn.time)) set('ki-time', sn.time);
   if(sn.weeks) set('ki-weeks', sn.weeks);
   kiSetDaysArr(sn.days||[]);
@@ -5115,7 +5143,8 @@ function kiRenderStep(existing){
   const prog=document.getElementById('ki-progress');
   const nextBtn=document.getElementById('ki-next');
   // clear fields
-  ['ki-name','ki-dose','ki-vial','ki-bac','ki-start','ki-weeks','ki-end'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['ki-name','ki-dose','ki-vial','ki-bac','ki-saline','ki-volPerSpray','ki-start','ki-weeks','ki-end'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  kiApplyRouteForm(null);
   // Default start date to today (so a new protocol starts now unless changed).
   { const st=document.getElementById('ki-start'); if(st){ st.value=(typeof localDateStr==='function')?localDateStr(new Date()):new Date().toISOString().slice(0,10); } }
   document.getElementById('ki-unit').value='mcg';
@@ -5145,6 +5174,7 @@ function kiRenderStep(existing){
       const set=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null) el.value=v; };
       set('ki-name', existing.name); set('ki-dose', existing.dose); set('ki-unit', existing.unit||'mcg');
       set('ki-freq', existing.freq||'weekly'); set('ki-vial', existing.vialSize); set('ki-bac', existing.bacWater);
+      set('ki-saline', existing.saline); set('ki-volPerSpray', existing.volPerSpray); kiApplyRouteForm(existing);
       { const ne=normalizeSchedule({freq:existing.freq, time:existing.time}); set('ki-freq', ne.freq||'weekly'); set('ki-time', (['AM','PM','Both'].includes(ne.time)?ne.time:'AM')); }
       // §3.2/§3: an inactive preloaded compound should NOT carry a stale start date into a
       // new activation — default to today. An already-active compound keeps its real start.
@@ -5188,9 +5218,16 @@ function kiCollect(){
   return {
     name, dose:parseFloat(g('ki-dose'))||0, unit:g('ki-unit'),
     freq:g('ki-freq'), days:kiGetDays(), time:g('ki-time')||'AM',
-    start:start||'', weeks:weeks||'', end:end||'',
+    // Ongoing carries no duration: never emit weeks/end for it, whatever the
+    // inputs happen to hold (prefill from a chosen compound, or an earlier step).
+    start:start||'',
+    weeks:(_kiDurtype==='ongoing')?'':(weeks||''),
+    end:  (_kiDurtype==='ongoing')?'':(end||''),
     durtype: _kiDurtype,
-    vialSize:g('ki-vial')||'', bacWater:g('ki-bac')||''
+    route:g('ki-route')||'SubQ Injection',
+    formulation:_kiFormulation,
+    vialSize:g('ki-vial')||'', bacWater:g('ki-bac')||'',
+    saline:g('ki-saline')||'', volPerSpray:g('ki-volPerSpray')||''
   };
 }
 function kiFinishStack(){
@@ -5249,9 +5286,8 @@ async function kiNextInner(after){
   // at the first missing field with a specific message.
   {
     // Resolve the route being used (chosen/activate compound keeps its own route).
-    let route = defaultRouteFor(data.name);
-    if(_kiChosenId){ const ex=D.compounds.find(x=>x.id===_kiChosenId); if(ex&&ex.route) route=ex.route; }
-    else if(_kiMode==='activate' && _kiActivateId){ const ex=D.compounds.find(x=>x.id===_kiActivateId); if(ex&&ex.route) route=ex.route; }
+    // The user now picks the route explicitly; defaultRouteFor is only a fallback.
+    const route = data.route || defaultRouteFor(data.name);
     const draft=Object.assign({}, data, {route});
     const titrTogV=document.getElementById('ki-titr-tog');
     if(titrTogV && titrTogV.classList.contains('on')) draft.titration={enabled:true, steps:_titrDraft||[]};
@@ -5280,15 +5316,19 @@ async function kiNextInner(after){
         Object.assign(c, { dose:data.dose, unit:data.unit, freq:data.freq,
           days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')),
           start:data.start, weeks:data.weeks, end:data.end, durtype:data.durtype,
-          vialSize:data.vialSize, bacWater:data.bacWater, active:true });
+          route:data.route, formulation:data.formulation,
+          vialSize:data.vialSize, bacWater:data.bacWater,
+          saline:data.saline, volPerSpray:data.volPerSpray, active:true });
         if(titr) c.titration=titr; else delete c.titration;
       }
     }
     if(!c){
       // "Add your own" (or chosen id not found): create a new compound.
       c={ id:uid(), name:data.name, dose:data.dose, unit:data.unit, freq:data.freq,
-        route:defaultRouteFor(data.name), days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')), start:data.start, weeks:data.weeks, end:data.end,
-        durtype:data.durtype, vialSize:data.vialSize, bacWater:data.bacWater, active:true,
+        route:data.route||defaultRouteFor(data.name), formulation:data.formulation,
+        days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')), start:data.start, weeks:data.weeks, end:data.end,
+        durtype:data.durtype, vialSize:data.vialSize, bacWater:data.bacWater,
+        saline:data.saline, volPerSpray:data.volPerSpray, active:true,
         color: (typeof COLORS!=='undefined' && COLORS.length) ? COLORS[D.compounds.length % COLORS.length] : '#4B96E6' };
       if(titr) c.titration=titr;
       D.compounds.push(c);
@@ -5333,6 +5373,47 @@ function defaultRouteFor(name){
   const n=(name||'').toLowerCase();
   if(n.includes('hcg')) return 'SubQ Injection';
   return 'SubQ Injection';
+}
+let _kiFormulation='reconstituted';
+// Point the route + formulation controls at an existing compound (or reset to
+// defaults when there isn't one), then re-sync which fields are visible.
+function kiApplyRouteForm(c){
+  const routeEl=document.getElementById('ki-route');
+  if(routeEl){
+    const want=(c&&c.route)||'SubQ Injection';
+    const match=Array.prototype.find.call(routeEl.options, o=>o.value.toLowerCase()===String(want).toLowerCase());
+    routeEl.value = match ? match.value : 'SubQ Injection';
+  }
+  kiSetFormulation(c ? (isOilBased(c)?'oil':'reconstituted') : 'reconstituted');
+}
+// Show only the fields the chosen route + formulation actually need, so a user
+// is never blocked by a field that does not apply (e.g. BAC water on oil).
+function kiSetFormulation(v){
+  _kiFormulation = (v==='oil') ? 'oil' : 'reconstituted';
+  document.querySelectorAll('#ki-form-btns .ki-form-opt').forEach(b=>{
+    b.classList.toggle('on', b.getAttribute('data-form')===_kiFormulation);
+  });
+  kiSyncFormFields();
+}
+function onKiRoute(){ kiSyncFormFields(); }
+function kiSyncFormFields(){
+  const routeEl=document.getElementById('ki-route');
+  const route=routeEl?routeEl.value:'SubQ Injection';
+  const inj=isInjectableRoute(route), spray=isSprayRoute(route);
+  const oil=inj && _kiFormulation==='oil';
+  const show=(id,on)=>{ const el=document.getElementById(id); if(el) el.style.display = on?'':'none'; };
+  show('ki-form-wrap', inj);
+  show('ki-vialrow',   inj||spray);
+  show('ki-bac-wrap',  (inj&&!oil)||spray);
+  show('ki-nasalrow',  spray);
+  const lbl=document.getElementById('ki-vial-lbl');
+  if(lbl) lbl.textContent = oil ? 'Concentration (mg/mL)' : (spray ? 'Peptide amount' : 'Vial size');
+  const vial=document.getElementById('ki-vial');
+  if(vial) vial.placeholder = oil ? 'e.g. 250' : 'e.g. 5';
+  const hint=document.getElementById('ki-form-hint');
+  if(hint) hint.textContent = oil
+    ? 'Pre-mixed in oil. No BAC water — enter the label concentration.'
+    : 'Powder reconstituted with BAC water.';
 }
 let _kiStackCount=0;
 function kiCancel(){ closeOv('ov-keyinfo'); _kiMode=null; _kiStackCount=0; }
@@ -5514,7 +5595,9 @@ function validateProtocolDraft(d, ctx){
   // Injectable routes need vial size (for draw calc). Nasal/oral/topical do not.
   const injectable=isInjectableRoute(d.route);
   if(injectable){
-    if(!(num(d.vialSize)>0)) errors.push({field:'vialSize', message:'Vial size is required for injectable protocols.'});
+    if(!(num(d.vialSize)>0)) errors.push({field:'vialSize', message: isOilBased(d)
+        ? 'Concentration (mg/mL) is required for oil-based protocols.'
+        : 'Vial size is required for injectable protocols.'});
     // BAC water required for reconstituted peptides (not oil-based)
     // Oil-based compounds are pre-mixed and never need BAC water — including when
     // taken SubQ in an insulin pin. Use the same oil test as the calculator and
@@ -5997,9 +6080,31 @@ window.PT_debug = {
         <input class="fi" id="ki-end" type="date" onchange="kiSyncDates('end')" style="margin-bottom:14px">
       </div>
 
-      <div style="display:flex;gap:8px;margin-bottom:14px">
-        <div style="flex:1"><label class="fl">Vial size</label><input class="fi" id="ki-vial" type="number" step="0.01" placeholder="e.g. 5"></div>
-        <div style="flex:1"><label class="fl">BAC water (ml)</label><input class="fi" id="ki-bac" type="number" step="0.1" placeholder="e.g. 2"></div>
+      <label class="fl">Administration</label>
+      <select class="fs" id="ki-route" onchange="onKiRoute()" style="margin-bottom:14px">
+        <option value="SubQ Injection">Subcutaneous injection (SubQ)</option>
+        <option value="IM Injection">Intramuscular injection (IM)</option>
+        <option value="Nasal Spray">Nasal spray</option>
+        <option value="Oral">Oral</option>
+        <option value="Topical">Topical</option>
+      </select>
+
+      <div id="ki-form-wrap">
+        <label class="fl">Formulation</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px" id="ki-form-btns">
+          <button type="button" class="btn btn-s btn-sm ki-form-opt on" data-form="reconstituted" style="flex:1;font-size:13px;padding:8px" onclick="kiSetFormulation('reconstituted')">Reconstituted</button>
+          <button type="button" class="btn btn-s btn-sm ki-form-opt" data-form="oil" style="flex:1;font-size:13px;padding:8px" onclick="kiSetFormulation('oil')">Oil-based</button>
+        </div>
+        <div id="ki-form-hint" style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Powder reconstituted with BAC water.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:14px" id="ki-vialrow">
+        <div style="flex:1" id="ki-vial-wrap"><label class="fl" id="ki-vial-lbl">Vial size</label><input class="fi" id="ki-vial" type="number" step="0.01" placeholder="e.g. 5"></div>
+        <div style="flex:1" id="ki-bac-wrap"><label class="fl">BAC water (ml)</label><input class="fi" id="ki-bac" type="number" step="0.1" placeholder="e.g. 2"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px" id="ki-nasalrow">
+        <div style="flex:1"><label class="fl">Saline (ml)</label><input class="fi" id="ki-saline" type="number" step="0.1" placeholder="optional"></div>
+        <div style="flex:1"><label class="fl">Volume per spray (ml)</label><input class="fi" id="ki-volPerSpray" type="number" step="0.001" placeholder="e.g. 0.1"></div>
       </div>
 
       <div style="display:flex;gap:8px;margin-top:8px">
