@@ -630,7 +630,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0802.1135</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0803.0912</div>
       </div>
     </div>
   </div>
@@ -769,7 +769,7 @@ tr:active td{background:var(--card2)}
     </div>
 
     <div class="syringe-wrap" id="oil-syringe-card" style="display:none">
-      <div class="calc-section-lbl">Syringe Visual (IM)</div>
+      <div class="calc-section-lbl">Syringe Visual (Oil)</div>
       <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin:0 0 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"><path d="M18 2l4 4M17 3l4 4-9 9H8v-4l9-9zM8 16l-4 4M11 8l5 5"/></svg> Insulin</div>
       <div class="syringe-size-row">
         <button class="syringe-size-btn" onclick="setOilSyrSize(0.3,'insulin',this)">0.3 ml</button>
@@ -978,6 +978,11 @@ tr:active td{background:var(--card2)}
     </div>
 
     <div id="pg-stack" class="pg hidden">
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="rec-tab on" id="stacktab-stack" onclick="setStackTab('stack')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"><path d="M4 7h16M4 12h16M4 17h16"/></svg> Stack</button>
+        <button class="rec-tab" id="stacktab-prep" onclick="setStackTab('prep')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18M8 2.5v4M16 2.5v4M8 14h.01M12 14h.01M16 14h.01"/></svg> Weekly Prep</button>
+      </div>
+      <div id="stack-main">
       <div id="stack-content"></div>
 
       <div style="background:var(--brand);border:1px solid var(--border-subtle);border-radius:var(--r);padding:14px;margin-top:4px">
@@ -985,6 +990,9 @@ tr:active td{background:var(--card2)}
         <button class="btn btn-p" onclick="copyStackPrompt()" id="copy-stack-btn" style="font-size:14px">Copy Stack for AI Analysis</button>
         <div id="copy-stack-confirm" style="font-size:12px;color:var(--success);margin-top:8px;display:none;text-align:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg> Prompt copied — paste into your AI of choice</div>
       </div>
+      </div>
+
+      <div id="stack-prep" class="hidden"></div>
     </div>
 
   </div>
@@ -1345,7 +1353,7 @@ const APP_VERSION = '2.2';
 const CURRENT_SCHEMA = 2;
 const APP_KEYS = ['protocol_data','pt_backup','saved_doses','saved_stacks',
   'pt_cycle_reminded','pt_missed_confirmed','pt_last_backup_remind','pt_premigration_v1',
-  'pt_migration_temp','pt_preimport_backup'];
+  'pt_migration_temp','pt_preimport_backup','pt_prep_v1'];
 
 function esc(v){
   if(v===undefined||v===null) return '';
@@ -1958,6 +1966,391 @@ function rStack(){
 }
 
 // Days until this compound's cycle ends (null when it has no end)
+// ─── WEEKLY PREPARATION (pre-pull planner) ───────────────────
+// A static worksheet: everything scheduled for the week, so the user can sit
+// down and draw it all in one go. Deliberately ignores what has already been
+// logged or skipped — the point is the full week's requirement, not what's left.
+// Reuses the frozen scheduling logic (isDue/bucket/effectiveDose) by walking
+// viewDate day by day, then restoring it. Draw amounts mirror pinBadge exactly
+// but return data rather than markup — a static test asserts the two agree.
+//
+// PREPARED STATE IS NOT A DOSE LOG. Marking a compound prepared records only
+// that the syringes exist. Administration is still logged on Today. The two are
+// stored separately and neither writes to the other.
+let prepWeekOffset = 0;
+let prepOnlyUnprepared = false;
+const PREP_KEY = 'pt_prep_v1';
+
+function prepWeekStart(dateStr){
+  const d = new Date((dateStr||tod())+'T12:00:00');
+  if(isNaN(d)) return tod();
+  const back = (d.getDay()+6)%7;          // Monday = start of week
+  d.setDate(d.getDate()-back);
+  return localDateStr(d);
+}
+
+// ── Prepared-status store: its own key, never merged into D or the dose log ──
+function prepReadAll(){
+  const r = safeReadJson(PREP_KEY);
+  return (r && typeof r==='object' && !Array.isArray(r)) ? r : {};
+}
+function prepWriteAll(obj){
+  // keep the last 8 weeks only — this is a scratch checklist, not history
+  const keys = Object.keys(obj).sort().reverse().slice(0,8);
+  const trimmed = {};
+  keys.forEach(k=>{ trimmed[k]=obj[k]; });
+  safeWriteJson(PREP_KEY, trimmed);
+}
+// A prepared mark stores the SIGNATURE of what was prepared (count, doses,
+// per-syringe volumes). If the protocol later changes, the stored signature no
+// longer matches and the mark is reported stale rather than silently trusted.
+function prepIsDone(week, pid){
+  const all = prepReadAll();
+  return !!(all[week] && all[week][pid]);
+}
+function prepStoredSig(week, pid){
+  const all = prepReadAll();
+  return (all[week] && all[week][pid]) || null;
+}
+// 'none' | 'prepared' | 'stale'
+function prepStatus(week, pid, sig){
+  const stored = prepStoredSig(week, pid);
+  if(!stored) return 'none';
+  if(typeof stored!=='string') return 'stale';   // legacy boolean — cannot verify
+  return stored===sig ? 'prepared' : 'stale';
+}
+function prepSetDone(week, pid, sig){
+  const all = prepReadAll();
+  if(!all[week]) all[week] = {};
+  if(sig) all[week][pid] = sig; else delete all[week][pid];
+  if(!Object.keys(all[week]).length) delete all[week];
+  prepWriteAll(all);
+}
+function prepToggle(pid){
+  const week = addDays(prepWeekStart(tod()), prepWeekOffset*7);
+  const t = prepWeekData(week).totals.find(x=>x.pid===pid);
+  const sig = t ? t.sig : null;
+  // Toggling a stale card re-prepares it against the CURRENT signature.
+  const st = prepStatus(week, pid, sig);
+  prepSetDone(week, pid, st==='prepared' ? null : sig);
+  rPrep();
+}
+function prepMarkAll(val){
+  const week = addDays(prepWeekStart(tod()), prepWeekOffset*7);
+  const data = prepWeekData(week);
+  const all = prepReadAll();
+  if(val){ all[week] = {}; data.totals.forEach(t=>{ all[week][t.pid]=t.sig; }); }
+  else delete all[week];
+  prepWriteAll(all);
+  rPrep();
+}
+function prepToggleFilter(){ prepOnlyUnprepared = !prepOnlyUnprepared; rPrep(); }
+
+// ── Unit vocabulary: what the user is physically making ──
+function prepCountNoun(t, n){
+  const one = t.group==='oil' || t.group==='iu' || t.group==='pep' ? 'syringe'
+            : t.group==='oral' ? 'capsule'
+            : t.group==='topical' ? 'application'
+            : 'dose';
+  return one + (n===1?'':'s');
+}
+function isSubQRoute(route){ return /subq|sub-q|subcutaneous/i.test(route||''); }
+function prepGroupOf(c){
+  if(isSprayRoute(c.route)) return 'nasal';
+  if(isOilBased(c)) return 'oil';
+  const r=(c.route||'').toLowerCase();
+  if(/oral|capsule|tablet|sublingual/.test(r)) return 'oral';
+  if(/topical|cream|gel/.test(r)) return 'topical';
+  if((c.unit||'')==='IU' || (c.vialUnit||'')==='IU') return 'iu';
+  return 'pep';
+}
+const PREP_GROUP_ORDER = ['pep','iu','oil','nasal','oral','topical'];
+const PREP_GROUP_LABEL = {pep:'Reconstituted peptides', iu:'IU-based injectables',
+  oil:'Oil-based injectables', nasal:'Nasal sprays', oral:'Oral', topical:'Topical'};
+
+// Amount to draw for ONE dose. Returns {kind,value,ml,text} or null when the
+// compound lacks the vial data needed to compute it.
+function prepDraw(c, date){
+  const vs=parseFloat(c.vialSize), bac=parseFloat(c.bacWater), dose=parseFloat(effectiveDose(c,date));
+  if(!vs||!dose) return null;
+  const doseMcg=toMcg(dose, c.unit);
+  if(isSprayRoute(c.route)){
+    const r=sprayCalc({peptideAmt:c.vialSize, peptideUnit:c.vialUnit||'mg', bacWater:c.bacWater,
+                       saline:c.saline, volPerSpray:c.volPerSpray, doseMcg:dose, doseUnit:c.unit});
+    if(r.ok && r.spraysRounded!=null && r.spraysRounded>0){
+      const vps=parseFloat(c.volPerSpray)||0;
+      return {kind:'sprays', value:r.spraysRounded, ml:(vps>0?r.spraysRounded*vps:null),
+              text:fmtNum(r.spraysRounded)+' spray'+(r.spraysRounded===1?'':'s')};
+    }
+    return null;
+  }
+  if(isOilBased(c)){
+    const concMcg=toMcg(vs, c.vialUnit||'mg');
+    if(!concMcg) return null;
+    const ml=doseMcg/concMcg;
+    if(!isFinite(ml)||ml<=0) return null;
+    // Oils are commonly run SubQ in a U-100 insulin pin. When the route says so,
+    // surface the insulin-unit equivalent alongside mL (1 mL = 100 units).
+    return {kind:'ml', value:ml, ml:ml, subq:isSubQRoute(c.route), text:ml.toFixed(2)+' mL'};
+  }
+  if(!bac) return null;
+  const concMcg=toMcg(vs/bac, c.vialUnit||'mg');
+  if(!concMcg) return null;
+  const units=(doseMcg/concMcg)*100;
+  if(!isFinite(units)||units<=0) return null;
+  return {kind:'units', value:units, ml:units/100,
+          text:(units<10?units.toFixed(1):units.toFixed(0))+' units'};
+}
+
+// Build the whole week. Pure data — no DOM. viewDate is saved and restored.
+// STATIC: logged and skipped doses are counted like any other.
+function prepWeekData(start){
+  const prev = viewDate;
+  const days = [], totals = {};
+  try{
+    for(let i=0;i<7;i++){
+      const date = addDays(start,i);
+      viewDate = date;                         // frozen isDue reads the global
+      const items = [];
+      (D.compounds||[]).forEach(c=>{
+        if(!c || !isDue(c)) return;
+        const b = bucket(c);
+        const slots = (b==='both') ? ['am','pm'] : [''];
+        slots.forEach(slot=>{
+          const dose = effectiveDose(c, date);
+          const draw = prepDraw(c, date);
+          const label = (b==='both') ? slot.toUpperCase()
+                      : (b==='pm' ? 'PM' : (b==='any' ? 'Any' : 'AM'));
+          items.push({pid:c.id, name:c.name||'Unnamed', slot:label,
+                      dose:dose, unit:c.unit||'', draw:draw});
+          const dv = parseFloat(dose)||0;
+          const t = totals[c.id] || (totals[c.id] = {pid:c.id, name:c.name||'Unnamed',
+                      color:c.color||'', unit:c.unit||'', route:c.route||'',
+                      group:prepGroupOf(c), vialSize:c.vialSize, vialUnit:c.vialUnit||'mg',
+                      bacWater:c.bacWater, subq:isSubQRoute(c.route),
+                      doses:0, mass:0, vol:0, mlTotal:0, kind:null,
+                      minDose:dv, maxDose:dv, minVol:null, maxVol:null, byVol:{}});
+          t.doses += 1;
+          t.mass  += dv;
+          if(dv < t.minDose) t.minDose = dv;
+          if(dv > t.maxDose) t.maxDose = dv;
+          if(draw){
+            t.vol  += draw.value;
+            t.kind  = draw.kind;
+            if(draw.ml!=null) t.mlTotal += draw.ml;
+            if(t.minVol===null || draw.value<t.minVol) t.minVol = draw.value;
+            if(t.maxVol===null || draw.value>t.maxVol) t.maxVol = draw.value;
+          }
+          // Group identical syringes so a varying week can be shown as
+          // "4 x 10 units" + "3 x 15 units" instead of a meaningless average.
+          const gk = (draw ? draw.value.toFixed(6) : 'na')+'@'+dv;
+          const g  = t.byVol[gk] || (t.byVol[gk] = {vol:draw?draw.value:null,
+                      ml:draw?draw.ml:null, dose:dv, count:0});
+          g.count += 1;
+        });
+      });
+      days.push({date:date, items:items});
+    }
+  } finally { viewDate = prev; }               // always restore, even on throw
+  const list = Object.values(totals);
+  list.forEach(t=>{
+    t.breakdown = Object.values(t.byVol).sort((a,b)=>(a.dose-b.dose)||((a.vol||0)-(b.vol||0)));
+    t.varied    = t.breakdown.length > 1;
+    // Signature covers everything a user would re-draw for: how many syringes,
+    // at what dose, at what volume. Any protocol edit that moves these
+    // invalidates a previously prepared mark.
+    t.sig = t.doses+'|'+t.kind+'|'+t.breakdown
+              .map(g=>g.count+'x'+g.dose+'@'+(g.vol==null?'na':g.vol.toFixed(4))).join(',');
+  });
+  return {start:start, days:days, totals:list};
+}
+
+function prepFmtQty(n){
+  if(!Number.isFinite(n)) return '?';
+  const r = Math.round(n*100)/100;
+  return r.toLocaleString('en-US', {maximumFractionDigits:2});
+}
+function prepVolText(kind, v){
+  if(!Number.isFinite(v) || v<=0) return '';
+  if(kind==='ml')     return v.toFixed(2)+' mL';
+  if(kind==='sprays') return prepFmtQty(Math.round(v*2)/2)+' spray'+(v===1?'':'s');
+  return (v<10?v.toFixed(1):v.toFixed(0))+' units';
+}
+// PER DOSE — the amount that goes into one syringe. Ranges when titration moves it.
+function prepPerVolText(t){
+  if(!t.kind || t.minVol===null) return '';
+  if(t.minVol===t.maxVol) return prepVolText(t.kind, t.minVol);
+  return prepVolText(t.kind, t.minVol)+'\u2013'+prepVolText(t.kind, t.maxVol);
+}
+// WHOLE WEEK — the total drawn out of the vial.
+function prepTotalText(t){ return prepVolText(t.kind, t.vol); }
+function prepPerDoseText(t){
+  if(!t.doses) return '';
+  if(t.minDose===t.maxDose) return prepFmtQty(t.minDose)+' '+t.unit;
+  return prepFmtQty(t.minDose)+'\u2013'+prepFmtQty(t.maxDose)+' '+t.unit;
+}
+function prepPerMlText(t){
+  if(t.kind==='ml' || t.minVol===null) return '';       // already expressed in mL
+  const per = t.doses ? t.mlTotal/t.doses : 0;
+  if(!(per>0)) return '';
+  return per.toFixed(2)+' mL';
+}
+
+// Oil run SubQ is drawn in a U-100 insulin pin, so show the unit equivalent.
+// Always labelled U-100 — never bare "units" — so the syringe scale is unambiguous.
+function prepU100Text(ml){
+  if(!Number.isFinite(ml) || ml<=0) return '';
+  const u = ml*100;
+  return (u<10?u.toFixed(1):u.toFixed(0))+' units (U-100)';
+}
+function prepPerU100Text(t){
+  if(t.kind!=='ml' || !t.subq || t.minVol===null) return '';
+  if(t.minVol===t.maxVol) return prepU100Text(t.minVol);
+  return prepU100Text(t.minVol)+'\u2013'+prepU100Text(t.maxVol);
+}
+
+function prepShift(n){ prepWeekOffset += n; rPrep(); }
+function prepThisWeek(){ prepWeekOffset = 0; rPrep(); }
+
+function rPrep(){
+  const el = document.getElementById('stack-prep');
+  if(!el) return;
+  const start = addDays(prepWeekStart(tod()), prepWeekOffset*7);
+  const end   = addDays(start,6);
+  const data  = prepWeekData(start);
+  const MON   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtD  = s=>{ const d=new Date(s+'T12:00:00'); return d.getDate()+' '+MON[d.getMonth()]; };
+
+  const relLbl = prepWeekOffset===0 ? 'This week'
+               : prepWeekOffset===1 ? 'Next week'
+               : prepWeekOffset===-1 ? 'Last week'
+               : (prepWeekOffset>0 ? 'In '+prepWeekOffset+' weeks' : Math.abs(prepWeekOffset)+' weeks ago');
+
+  let h = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px">'
+    + '<button class="rec-tab" onclick="prepShift(-1)" aria-label="Previous week" style="padding:8px 12px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>'
+    + '<div style="text-align:center;line-height:1.3"><div style="font-size:14px;color:var(--text-primary);font-weight:600">'+esc(relLbl)+'</div>'
+    + '<div style="font-size:11px;color:var(--text-secondary)">'+esc(fmtD(start))+' &ndash; '+esc(fmtD(end))+'</div></div>'
+    + '<button class="rec-tab" onclick="prepShift(1)" aria-label="Next week" style="padding:8px 12px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>'
+    + '</div>';
+
+  if(prepWeekOffset!==0)
+    h += '<div style="text-align:center;margin-bottom:12px"><button class="rec-tab" onclick="prepThisWeek()" style="font-size:12px">Back to this week</button></div>';
+
+  const totals = data.totals.slice().sort((a,b)=>a.name.localeCompare(b.name));
+
+  if(!totals.length){
+    h += '<div class="empty"><div class="empty-ic" style="color:var(--text-muted)"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg></div>'
+       + '<div class="empty-t">Nothing scheduled</div><div>No doses fall in this week</div></div>';
+    el.innerHTML = h;
+    return;
+  }
+
+  // ── Progress summary ──
+  const donePids  = totals.filter(t=>prepStatus(start,t.pid,t.sig)==='prepared');
+  const stalePids = totals.filter(t=>prepStatus(start,t.pid,t.sig)==='stale');
+  const totalUnits = totals.reduce((a,t)=>a+t.doses,0);
+  const doneUnits  = donePids.reduce((a,t)=>a+t.doses,0);
+  const pct = totalUnits ? Math.round(doneUnits/totalUnits*100) : 0;
+  const mlAll = totals.reduce((a,t)=>a+(t.mlTotal||0),0);
+
+  h += '<div style="background:var(--surface-primary);border:1px solid var(--border-subtle);border-radius:var(--r);padding:14px;margin-bottom:10px">'
+     + '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">'
+     +   '<div style="font-size:26px;font-weight:700;color:var(--text-primary);line-height:1">'+doneUnits+'<span style="font-size:15px;color:var(--text-secondary);font-weight:500"> / '+totalUnits+'</span></div>'
+     +   '<div style="font-size:11px;color:var(--text-secondary)">'+donePids.length+' of '+totals.length+' compounds</div>'
+     + '</div>'
+     + '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">prepared'+(mlAll>0?' &middot; '+mlAll.toFixed(2)+' mL total solution':'')+'</div>'
+     + '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Full week, regardless of what\'s logged</div>'
+     + '<div style="height:5px;border-radius:3px;background:var(--surface-interactive);margin-top:9px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--brand);border-radius:3px"></div></div>'
+     + (stalePids.length?'<div style="font-size:11px;color:var(--warning-text);margin-top:8px">'+stalePids.length+' compound'+(stalePids.length===1?'':'s')+' changed since being prepared &mdash; re-check before use</div>':'')
+     + '</div>';
+
+  // ── Controls ──
+  h += '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'
+     + '<button class="rec-tab" style="font-size:11px;flex:1" onclick="prepMarkAll(true)">Prepare all</button>'
+     + '<button class="rec-tab" style="font-size:11px;flex:1" onclick="prepMarkAll(false)">Reset</button>'
+     + '<button class="rec-tab'+(prepOnlyUnprepared?' on':'')+'" style="font-size:11px;flex:1" onclick="prepToggleFilter()">'+(prepOnlyUnprepared?'Show all':'Unprepared only')+'</button>'
+     + '</div>';
+
+  // ── Cards, grouped by preparation type ──
+  let shown = 0;
+  PREP_GROUP_ORDER.forEach(g=>{
+    const inGroup = totals.filter(t=>t.group===g)
+                          .filter(t=>!prepOnlyUnprepared || prepStatus(start,t.pid,t.sig)!=='prepared');
+    if(!inGroup.length) return;
+    h += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin:14px 0 7px">'+esc(PREP_GROUP_LABEL[g]||g)+'</div>';
+    inGroup.forEach(t=>{
+      shown++;
+      const st     = prepStatus(start, t.pid, t.sig);
+      const done   = st==='prepared';
+      const stale  = st==='stale';
+      const noun   = prepCountNoun(t, t.doses);
+      const perVol = prepPerVolText(t);
+      const perMl  = prepPerMlText(t);
+      const totVol = prepTotalText(t);
+      const perU100= prepPerU100Text(t);
+      const hero   = perVol || prepPerDoseText(t);
+      h += '<div style="background:var(--surface-primary);border:1px solid '+(done?'var(--success)':(stale?'var(--warning)':'var(--border-subtle)'))+';border-radius:var(--r);padding:11px 12px;margin-bottom:7px'+(done?';opacity:0.55':'')+'">'
+         + '<div style="display:flex;align-items:center;gap:8px">'
+         +   (t.color?'<span style="width:8px;height:8px;border-radius:50%;background:'+esc(t.color)+';flex-shrink:0"></span>':'')
+         +   '<span style="flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.name)+'</span>'
+         +   '<span style="flex-shrink:0;font-size:11px;font-weight:600;color:var(--brand);background:var(--brand-soft);border:1px solid var(--brand-border);border-radius:10px;padding:2px 8px">'+t.doses+' '+esc(noun)+'</span>'
+         + '</div>'
+         + (stale?'<div style="font-size:11px;color:var(--warning-text);margin-top:6px;display:flex;align-items:center;gap:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L14 3.9a2 2 0 00-3.4 0z"/></svg> Protocol changed since prepared &mdash; re-check</div>':'')
+         + (t.varied
+             // Doses vary this week: never show an averaged "each". Show every
+             // distinct syringe explicitly, so the user can count them out.
+             ? '<div style="margin-top:7px">'
+               + '<div style="font-size:10px;color:var(--warning-text);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px">Doses vary this week</div>'
+               + t.breakdown.map(function(g){
+                   const gv = (g.vol!=null) ? prepVolText(t.kind, g.vol) : '';
+                   const gm = (g.ml!=null && t.kind!=='ml') ? g.ml.toFixed(2)+' mL' : '';
+                   return '<div style="font-size:16px;font-weight:700;color:var(--text-primary);line-height:1.35">'
+                     + g.count+' &times; <span>'+esc(gv||prepFmtQty(g.dose)+' '+t.unit)+'</span>'
+                     + (gm?'<span style="font-size:12px;font-weight:500;color:var(--text-secondary)"> &middot; '+esc(gm)+'</span>':'')
+                     + '<span style="font-size:11px;font-weight:500;color:var(--text-muted)"> &middot; '+esc(prepFmtQty(g.dose)+' '+t.unit)+'</span></div>';
+                 }).join('')
+               + '</div>'
+             : '<div style="font-size:19px;font-weight:700;color:var(--text-primary);margin-top:6px;line-height:1.15">'+esc(hero)
+               +   (perMl?'<span style="font-size:13px;font-weight:500;color:var(--text-secondary)"> &middot; '+esc(perMl)+'</span>':'')
+               +   (perU100?'<span style="font-size:13px;font-weight:500;color:var(--text-secondary)"> &middot; '+esc(perU100)+'</span>':'')
+               +   '<span style="font-size:12px;font-weight:500;color:var(--text-muted)"> each</span></div>'
+               + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px">'+esc(prepPerDoseText(t))+' per '+esc(prepCountNoun(t,1))+'</div>')
+         + '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Weekly draw: <span style="color:var(--text-primary);font-weight:600">'+esc(prepFmtQty(t.mass))+' '+esc(t.unit)+'</span>'
+         +   (totVol?' &middot; <span style="color:var(--text-primary);font-weight:600">'+esc(totVol)+'</span>':'')
+         +   (t.kind!=='ml' && t.mlTotal>0?' &middot; <span style="color:var(--text-primary);font-weight:600">'+t.mlTotal.toFixed(2)+' mL</span>':'')
+         +   (t.kind==='ml' && t.subq && t.vol>0?' &middot; <span style="color:var(--text-primary);font-weight:600">'+esc(prepU100Text(t.vol))+'</span>':'')
+         +   '</div>'
+         + '<button class="rec-tab'+(done?' on':'')+'" style="width:100%;margin-top:9px;font-size:12px;justify-content:center" onclick="prepToggle(\''+esc(t.pid)+'\')">'
+         +   (done
+              ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M20 6L9 17l-5-5"/></svg> Prepared &middot; tap to undo'
+              : (stale ? 'Re-check &amp; mark '+t.doses+' '+esc(noun)+' prepared'
+                       : 'Mark '+t.doses+' '+esc(noun)+' prepared'))
+         + '</button>'
+         + '</div>';
+    });
+  });
+
+  if(!shown && prepOnlyUnprepared)
+    h += '<div class="empty"><div class="empty-t">All prepared</div><div>Every compound for this week is marked prepared</div></div>';
+
+  h += '<div style="font-size:11px;color:var(--warning-text);line-height:1.5;margin-top:12px;padding:10px;background:var(--warning-soft);border-radius:var(--r)">Prepared does not mean administered. Log each dose on Today when you take it.</div>'
+     + '<div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:8px;padding-bottom:96px">Draw amounts are calculated from each compound\'s vial size and BAC water, matching the Today tab. Verify against your own syringe before drawing.</div>';
+  el.innerHTML = h;
+}
+
+function setStackTab(tab){
+  currentStackTab = tab;
+  const m=document.getElementById('stack-main'), p=document.getElementById('stack-prep');
+  if(m) m.classList.toggle('hidden', tab!=='stack');
+  if(p) p.classList.toggle('hidden', tab!=='prep');
+  const bs=document.getElementById('stacktab-stack'), bp=document.getElementById('stacktab-prep');
+  if(bs) bs.classList.toggle('on', tab==='stack');
+  if(bp) bp.classList.toggle('on', tab==='prep');
+  const t=document.getElementById('hdrTitle');
+  if(t) t.textContent = tab==='prep' ? 'Weekly Prep' : 'Stack Summary';
+  if(tab==='prep') rPrep(); else rStack();
+}
+
 function daysUntilCycleEnd(c){
   const end=getCompoundEndDate(c);
   if(!end) return null;
@@ -2930,6 +3323,7 @@ function updateDateNav(){
   else{banner.classList.add('hidden');}
 }
 let currentRecTab='stats';
+let currentStackTab='stack';
 
 function setRecTab(tab){
   currentRecTab=tab;
@@ -2955,7 +3349,7 @@ function nav(pg,btn){
   if(pg==='today'){viewDate=tod();updateDateNav();}
   if(pg==='records') setRecTab(currentRecTab);
   if(pg==='calc') initCalc();
-  if(pg==='stack') rStack();
+  if(pg==='stack') setStackTab(currentStackTab);
   const titles={today:'Today',proto:'Protocol',inv:'Inventory',calc:'Calculator',stack:'Stack Summary',records:'Records'};
   document.getElementById('hdrTitle').textContent=titles[pg]||pg;
 }
@@ -3359,7 +3753,9 @@ async function saveForm(){
     if(!vialVal || parseFloat(vialVal)<=0) missing.push('Vial size (needed for dose calc)');
     // BAC water only applies to reconstituted (non-oil) compounds.
     const routeVal=gv('f-route');
-    const oilish = /oral|topical/i.test(routeVal);
+    // Non-reconstituted: oral/topical, plus any oil-based compound on ANY route
+    // (running oils SubQ in an insulin pin is normal and must not be nagged).
+    const oilish = /oral|topical/i.test(routeVal) || isOilBased({cat:gv('f-cat'), route:routeVal});
     if(!oilish){
       const bacVal=gv('f-bac');
       if(!bacVal || parseFloat(bacVal)<=0) missing.push('BAC water (needed for units calc)');
@@ -5120,7 +5516,10 @@ function validateProtocolDraft(d, ctx){
   if(injectable){
     if(!(num(d.vialSize)>0)) errors.push({field:'vialSize', message:'Vial size is required for injectable protocols.'});
     // BAC water required for reconstituted peptides (not oil-based)
-    if(!isOilBasedRoute(d.route) && !(num(d.bacWater)>0)) errors.push({field:'bacWater', message:'BAC water is required to calculate the dose.'});
+    // Oil-based compounds are pre-mixed and never need BAC water — including when
+    // taken SubQ in an insulin pin. Use the same oil test as the calculator and
+    // pinBadge (category/route), NOT an IM-route-only test, or oil+SubQ is blocked.
+    if(!isOilBased(d) && !(num(d.bacWater)>0)) errors.push({field:'bacWater', message:'BAC water is required to calculate the dose.'});
   }
   // Nasal route needs reconstitution fields
   if(isSprayRoute(d.route)){
@@ -5409,7 +5808,7 @@ async function scheduleCycleNext(cid, key, listIdx){
     if(!weeks) missing.push('Duration (weeks)');
     if(!vialSize || parseFloat(vialSize)<=0) missing.push('Vial size (needed for dose calc)');
     const routeVal = compound ? (compound.route||'') : '';
-    const oilish = /oral|topical/i.test(routeVal);
+    const oilish = /oral|topical/i.test(routeVal) || (compound ? isOilBased(compound) : false);
     if(!oilish && (!bacWater || parseFloat(bacWater)<=0)) missing.push('BAC water (needed for units calc)');
     if(missing.length){
       const go = await ptConfirm('This next cycle is missing info that Today, the calculator and syringe amounts rely on:\n\n• '+missing.join('\n• ')+'\n\nSchedule anyway, or go back and fill them in?', 'Missing details', {okText:'Schedule anyway', cancelText:'Go back & fill'});
