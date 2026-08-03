@@ -630,7 +630,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0803.1912</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0803.2149</div>
       </div>
     </div>
   </div>
@@ -2083,6 +2083,16 @@ const PREP_GROUP_LABEL = {pep:'Reconstituted peptides', iu:'IU-based injectables
 // compound lacks the vial data needed to compute it.
 function prepDraw(c, date){
   const vs=parseFloat(c.vialSize), bac=parseFloat(c.bacWater), dose=parseFloat(effectiveDose(c,date));
+  if(!isSprayRoute(c.route)){
+    const info=drawInfo(c, date);
+    if(!info || info.error) return null;
+    // SubQ draws into a U-100 pin, so report units; IM reports millilitres.
+    if(isSubQRoute(c.route)){
+      return {kind:'units', value:info.units, ml:info.ml, subq:true,
+              text:fmtNum(+info.units.toFixed(info.units<10?1:0))+' units'};
+    }
+    return {kind:'ml', value:info.ml, ml:info.ml, subq:false, text:info.ml.toFixed(2)+' mL'};
+  }
   if(!vs||!dose) return null;
   const doseMcg=toMcg(dose, c.unit);
   if(isSprayRoute(c.route)){
@@ -2389,8 +2399,74 @@ function isOilBased(c){
 }
 
 // Pin amount: ml for oil-based, U-100 units for reconstituted peptides
+// Unit strings reach us in mixed case ('iu' from the wizard dropdown, 'IU' from
+// the editor). The frozen calculators match exactly, so canonicalise first.
+function normUnit(u){
+  const t=String(u||'').trim().toLowerCase();
+  if(t==='iu') return 'IU';
+  if(t==='ml') return 'ml';
+  if(t==='mg') return 'mg';
+  if(t==='mcg'||t==='ug') return 'mcg';
+  return t;
+}
+// SINGLE source of truth for "what goes in the pin". Delegates to the frozen,
+// unit-family-aware calculators rather than repeating ad-hoc toMcg() maths,
+// which silently treated 3 IU as 3 mcg and an mL dose as mcg.
+// Returns {units, ml, doseText} or {error} — never a wrong number.
+function drawInfo(c, date){
+  const dose=parseFloat(effectiveDose(c, date));
+  if(!(dose>0)) return null;
+  const unit=normUnit(c.unit), vUnit=normUnit(c.vialUnit||'mg');
+  const vs=parseFloat(c.vialSize), bac=parseFloat(c.bacWater);
+  // Dose already given as a volume: it IS the draw. Derive the mass it carries
+  // when the concentration is known, so the card can still show a real dose.
+  if(unit==='ml'){
+    let doseText=dose.toFixed(2)+' ml';
+    if(isPosFinite(vs) && ['mg','mcg'].includes(vUnit)){
+      const perMl = isOilBased(c) ? vs : (isPosFinite(bac) ? vs/bac : NaN);
+      if(Number.isFinite(perMl) && perMl>0) doseText=fmtNum(+(dose*perMl).toFixed(4))+' '+vUnit;
+    }
+    return {units:dose*100, ml:dose, doseText:doseText};
+  }
+  if(isOilBased(c)){
+    const r=oilCalc({conc:vs, concUnit:vUnit, dose:dose, doseUnit:unit});
+    if(!r.ok) return {error:r.error};
+    return {units:r.units, ml:r.ml, doseText:fmtNum(dose)+' '+unit};
+  }
+  const r=reconstitutionCalc({vialAmt:vs, vialUnit:vUnit, bac:bac, dose:dose, doseUnit:unit});
+  if(!r.ok) return {error:r.error};
+  return {units:r.units, ml:r.ml, doseText:fmtNum(dose)+' '+unit};
+}
+// What the card shows as the pin amount: insulin units for anything drawn into a
+// U-100 pin (SubQ), millilitres for IM. Same rule for every compound type.
+function pinAmountText(c, info){
+  if(!info || info.error) return '';
+  return isSubQRoute(c.route) ? fmtNum(+info.units.toFixed(info.units<10?1:0))+' units'
+                              : info.ml.toFixed(2)+' ml';
+}
+// The dose that pin contains.
+function doseLabel(c, date){
+  const info=drawInfo(c, date);
+  if(info && info.doseText) return info.doseText;
+  return fmtNum(effectiveDose(c, date))+' '+normUnit(c.unit);
+}
+// A dose entered in mL is already a VOLUME. It must never be pushed through the
+// mass->concentration path: toMcg() has no 'ml' case and silently returns the
+// number as if it were mcg, which produced a 0.00ml draw for a real 0.07 ml dose.
+function isVolumeDose(unit){ return /^ml$/i.test(String(unit||'').trim()); }
+const PIN_SVG='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M18 2l4 4M17 3l4 4-9 9H8v-4l9-9zM8 16l-4 4M11 8l5 5"/></svg> ';
 function pinBadge(c){
   const vs=parseFloat(c.vialSize), bac=parseFloat(c.bacWater), dose=parseFloat(effectiveDose(c));
+  // Every injectable now reports through drawInfo: pin amount + the dose it holds.
+  if(!isSprayRoute(c.route)){
+    const info=drawInfo(c);
+    if(info && info.error){
+      return '<span style="color:var(--warning-text);font-size:12px">Check vial units</span>';
+    }
+    const txt=pinAmountText(c, info);
+    if(txt) return PIN_SVG+txt;
+    return '';
+  }
   if(!vs||!dose) return '';
   const doseMcg=toMcg(dose, c.unit);
   // Nasal spray: show sprays-per-dose instead of a syringe amount.
@@ -2494,7 +2570,7 @@ function rToday(){
       <div style="flex:1;min-width:0">
         <div class="ci-name"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}${snz?'<span class="snz-badge">'+(snzTo?'Back '+fmtD(snzTo):'Snoozed')+'</span>':(expiring?'<span class="exp-badge">'+expiryBadge(dLeft)+'</span>':'')}</div>
         ${pin?`<div class="ci-draw">${pin}</div>`:''}
-        <div class="ci-sub">${effectiveDose(c)} ${c.unit} · ${esc(c.route)}</div>
+        <div class="ci-sub">${esc(doseLabel(c))} · ${esc(c.route)}</div>
       </div>
       <button class="snooze-btn ${snz?'on':''}" title="${snz?'Un-snooze':'Snooze for this day'}"
         onclick="toggleSkip('${c.id}','${slot||''}',event)">
@@ -5067,7 +5143,8 @@ function kiChooseCompound(){
   const set=(f,v)=>{const el=document.getElementById(f);if(el&&v!=null)el.value=v;};
   set('ki-name', c.name); set('ki-dose', c.dose); set('ki-unit', c.unit||'mcg');
   set('ki-freq', c.freq||'daily'); set('ki-vial', c.vialSize); set('ki-bac', c.bacWater);
-  set('ki-saline', c.saline); set('ki-volPerSpray', c.volPerSpray); kiApplyRouteForm(c);
+  set('ki-saline', c.saline); set('ki-volPerSpray', c.volPerSpray);
+  set('ki-vialUnit', c.vialUnit||'mg'); kiApplyRouteForm(c);
   // Normalize a possibly-contradictory stored schedule before displaying it.
   { const nc=normalizeSchedule({freq:c.freq, time:c.time}); set('ki-freq', nc.freq||'daily'); set('ki-time', (['AM','PM','Both'].includes(nc.time)?nc.time:'AM')); }
   // §3: inactive preloaded compound → start defaults to today (not a stale stored date).
@@ -5131,7 +5208,8 @@ function kiPopulateFrom(){
   const set=(id,val)=>{ const el=document.getElementById(id); if(el&&val!=null) el.value=val; };
   set('ki-name', sn.name); set('ki-dose', sn.dose); set('ki-unit', sn.unit);
   set('ki-freq', sn.freq); set('ki-vial', sn.vialSize); set('ki-bac', sn.bacWater);
-  set('ki-saline', sn.saline); set('ki-volPerSpray', sn.volPerSpray); kiApplyRouteForm(sn);
+  set('ki-saline', sn.saline); set('ki-volPerSpray', sn.volPerSpray);
+  set('ki-vialUnit', sn.vialUnit||'mg'); kiApplyRouteForm(sn);
   if(['AM','PM','Both'].includes(sn.time)) set('ki-time', sn.time);
   if(sn.weeks) set('ki-weeks', sn.weeks);
   kiSetDaysArr(sn.days||[]);
@@ -5174,7 +5252,8 @@ function kiRenderStep(existing){
       const set=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null) el.value=v; };
       set('ki-name', existing.name); set('ki-dose', existing.dose); set('ki-unit', existing.unit||'mcg');
       set('ki-freq', existing.freq||'weekly'); set('ki-vial', existing.vialSize); set('ki-bac', existing.bacWater);
-      set('ki-saline', existing.saline); set('ki-volPerSpray', existing.volPerSpray); kiApplyRouteForm(existing);
+      set('ki-saline', existing.saline); set('ki-volPerSpray', existing.volPerSpray);
+      set('ki-vialUnit', existing.vialUnit||'mg'); kiApplyRouteForm(existing);
       { const ne=normalizeSchedule({freq:existing.freq, time:existing.time}); set('ki-freq', ne.freq||'weekly'); set('ki-time', (['AM','PM','Both'].includes(ne.time)?ne.time:'AM')); }
       // §3.2/§3: an inactive preloaded compound should NOT carry a stale start date into a
       // new activation — default to today. An already-active compound keeps its real start.
@@ -5226,7 +5305,7 @@ function kiCollect(){
     durtype: _kiDurtype,
     route:g('ki-route')||'SubQ Injection',
     formulation:_kiFormulation,
-    vialSize:g('ki-vial')||'', bacWater:g('ki-bac')||'',
+    vialSize:g('ki-vial')||'', vialUnit:g('ki-vialUnit')||'mg', bacWater:g('ki-bac')||'',
     saline:g('ki-saline')||'', volPerSpray:g('ki-volPerSpray')||''
   };
 }
@@ -5317,7 +5396,7 @@ async function kiNextInner(after){
           days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')),
           start:data.start, weeks:data.weeks, end:data.end, durtype:data.durtype,
           route:data.route, formulation:data.formulation,
-          vialSize:data.vialSize, bacWater:data.bacWater,
+          vialSize:data.vialSize, vialUnit:data.vialUnit, bacWater:data.bacWater,
           saline:data.saline, volPerSpray:data.volPerSpray, active:true });
         if(titr) c.titration=titr; else delete c.titration;
       }
@@ -5327,7 +5406,7 @@ async function kiNextInner(after){
       c={ id:uid(), name:data.name, dose:data.dose, unit:data.unit, freq:data.freq,
         route:data.route||defaultRouteFor(data.name), formulation:data.formulation,
         days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')), start:data.start, weeks:data.weeks, end:data.end,
-        durtype:data.durtype, vialSize:data.vialSize, bacWater:data.bacWater,
+        durtype:data.durtype, vialSize:data.vialSize, vialUnit:data.vialUnit, bacWater:data.bacWater,
         saline:data.saline, volPerSpray:data.volPerSpray, active:true,
         color: (typeof COLORS!=='undefined' && COLORS.length) ? COLORS[D.compounds.length % COLORS.length] : '#4B96E6' };
       if(titr) c.titration=titr;
@@ -6099,7 +6178,12 @@ window.PT_debug = {
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:14px" id="ki-vialrow">
-        <div style="flex:1" id="ki-vial-wrap"><label class="fl" id="ki-vial-lbl">Vial size</label><input class="fi" id="ki-vial" type="number" step="0.01" placeholder="e.g. 5"></div>
+        <div style="flex:1" id="ki-vial-wrap"><label class="fl" id="ki-vial-lbl">Vial size</label>
+          <div style="display:flex;gap:6px">
+            <input class="fi" id="ki-vial" type="number" step="0.01" placeholder="e.g. 5" style="flex:1">
+            <select class="fs" id="ki-vialUnit" style="width:76px"><option>mg</option><option>mcg</option><option>IU</option></select>
+          </div>
+        </div>
         <div style="flex:1" id="ki-bac-wrap"><label class="fl">BAC water (ml)</label><input class="fi" id="ki-bac" type="number" step="0.1" placeholder="e.g. 2"></div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:14px" id="ki-nasalrow">
