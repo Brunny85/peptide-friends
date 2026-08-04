@@ -708,6 +708,15 @@ html[data-theme="light"] .inv-fl,
 html[data-theme="light"] .stack-lbl,
 html[data-theme="light"] .calc-section-lbl{color:var(--text-muted)}
 
+/* ── WIZARD SELECTED OPTIONS ────────────────────────────────────
+   .ki-dur-opt / .ki-form-opt got an 'on' class with nothing styling it,
+   so the chosen duration and formulation were invisible. ── */
+.ki-dur-opt.on,.ki-form-opt.on{
+  background:var(--brand-soft);border-color:var(--brand);color:var(--brand);font-weight:700}
+.ki-dur-opt.on::before,.ki-form-opt.on::before{
+  content:'';display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--brand);margin-right:7px;vertical-align:1px}
+
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}
 }
@@ -869,7 +878,7 @@ html[data-theme="light"] .calc-section-lbl{color:var(--text-muted)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0805.1044</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0805.1926</div>
       </div>
     </div>
   </div>
@@ -1336,6 +1345,7 @@ html[data-theme="light"] .calc-section-lbl{color:var(--text-muted)}
       </div>
       <div class="fg"><label class="fl">Volume per spray (ml)</label>
         <input class="fi" id="f-volPerSpray" type="number" step="0.01" placeholder="e.g. 0.1" oninput="updateSprayCalc()">
+        <div class="fhint">Most nasal pumps deliver 0.1 ml per spray. Change it if your device states otherwise.</div>
       </div>
       <div class="fg" id="f-spray-readout" style="display:none;background:var(--surface-secondary);border:1px solid var(--border-subtle);border-radius:12px;padding:12px 14px">
         <div style="font-size:13px;color:var(--text-secondary)">Reconstitution result</div>
@@ -1788,18 +1798,19 @@ const DEFAULTS=[
   {id:'p3', name:'TB-500',               cat:'Peptide',       dose:700,  unit:'mcg',route:'SubQ Injection',freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',durtype:'weeks',  weeks:'4',end:'',          cycle:'',       pct:'',notes:'',color:'#A78BFA',active:false},
   {id:'p4', name:'NAD+',                 cat:'Peptide',       dose:0,    unit:'mg', route:'SubQ Injection',           freq:'3xweek',  days:[1,3,5],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#FDE047',active:false},
   {id:'p5', name:'MOTSc',                cat:'Peptide',       dose:5,    unit:'mg', route:'SubQ Injection', freq:'3xweek',  days:[1,3,5],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#FB923C',active:false},
-  {id:'p6', name:'Selank',               cat:'Nootropic',     dose:200,  unit:'mcg',route:'Nasal Spray',   freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#60A5FA',active:false},
+  {id:'p6', name:'Selank',               cat:'Nootropic',     dose:200,  unit:'mcg',vialUnit:'mg', volPerSpray:'0.1', route:'Nasal Spray',   freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#60A5FA',active:false},
   {id:'p7', name:'GHK-Cu',               cat:'Peptide',       dose:2,    unit:'mg', route:'SubQ Injection', freq:'5xweek',  days:[1,2,3,4,5],time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'enddate', weeks:'',end:'2026-07-02',cycle:'',       pct:'',notes:'',color:'#F59E0B',active:false},
   {id:'p8', name:'Glutathione',          cat:'Peptide',       dose:200,  unit:'mg', route:'SubQ Injection',           freq:'3xweek',  days:[1,3,6],    time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#2DD4BF',active:false},
   {id:'p9', name:'KPV',                  cat:'Peptide',       dose:500,  unit:'mcg',route:'SubQ Injection',           freq:'daily',   days:[],         time:'Any', clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#94A3B8',active:false},
   {id:'p10',name:'Epithalon',            cat:'Peptide',       dose:5000, unit:'mcg',route:'SubQ Injection', freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#818CF8',active:false},
   {id:'p11',name:'Test-E',               cat:'Hormone',       dose:62.5, unit:'mg', route:'IM Injection',   freq:'2xweek',  days:[2,6],      time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#EF4444',active:false},
   {id:'p12',name:'Deca',                 cat:'Hormone',       dose:62.5, unit:'mg', route:'IM Injection',   freq:'weekly',  days:[2],        time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'enddate', weeks:'',end:'2026-06-04',cycle:'',       pct:'',notes:'',color:'#F472B6',active:false},
-  {id:'p13',name:'Human Growth Hormone', cat:'Growth Hormone',dose:3,    unit:'IU', route:'SubQ Injection', freq:'4xweek',  days:[1,2,3,4],  time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#60A5FA',active:false},
+  {id:'p13',name:'Human Growth Hormone', cat:'Growth Hormone',dose:3,    unit:'IU', vialUnit:'IU', route:'SubQ Injection', freq:'4xweek',  days:[1,2,3,4],  time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',durtype:'ongoing', weeks:'',end:'',          cycle:'Ongoing',pct:'',notes:'',color:'#60A5FA',active:false},
   {id:'p14',name:'MT2',                   cat:'Peptide',       dose:0,    unit:'mg', route:'SubQ Injection', freq:'eod',     days:[1,3,5],    time:'BedTime',clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#F472B6',active:false},
-  {id:'p15',name:'HCG',                   cat:'Peptide',       dose:500,  unit:'IU', route:'SubQ Injection',           freq:'daily',   days:[],         time:'AM',     clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#818CF8',active:false},
+  {id:'p15',name:'HCG',                   cat:'Peptide',       dose:500,  unit:'IU', vialUnit:'IU', route:'SubQ Injection',           freq:'daily',   days:[],         time:'AM',     clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#818CF8',active:false},
   {id:'p16', name:'IPA/CJC',              cat:'Peptide',       dose:100,  unit:'mcg',route:'SubQ Injection', freq:'daily',   days:[],         time:'PM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#A78BFA',active:false},
-  {id:'p17', name:'Semax',               cat:'Nootropic',     dose:200,  unit:'mcg',route:'Nasal Spray',   freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#F472B6',active:false}
+  {id:'p18',name:'IGF-1 LR3',            cat:'Peptide',       dose:0,    unit:'IU', vialUnit:'IU', route:'SubQ Injection', freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#2DD4BF',active:false},
+  {id:'p17', name:'Semax',               cat:'Nootropic',     dose:200,  unit:'mcg',vialUnit:'mg', volPerSpray:'0.1', route:'Nasal Spray',   freq:'5xweek',  days:[1,2,3,4,5],time:'AM',  clock:'',timingNotes:'',doseNotes:'',start:'',          durtype:'ongoing', weeks:'',end:'',          cycle:'',       pct:'',notes:'',color:'#F472B6',active:false}
 ];
 
 // Return the default compounds with ACTIVE ones re-anchored to be currently live.
@@ -4361,7 +4372,7 @@ function defaultInventory(){
     {id:uid(),pid:pid('Test-E'),         vials:2,  qty:250,  unit:'mg', purchased:'2026-06-21'},
     {id:uid(),pid:pid('Deca'),           vials:1,  qty:250,  unit:'mg', purchased:'2026-06-21'},
     {id:uid(),pid:pid('Human Growth Hormone'), vials:3, qty:16, unit:'IU', purchased:'2026-06-21'},
-    {id:uid(),pid:pid('HCG'),            vials:8,  qty:10000,unit:'mg', purchased:'2026-06-21'},
+    {id:uid(),pid:pid('HCG'),            vials:8,  qty:10000,unit:'IU', purchased:'2026-06-21'},
   ].filter(x=>x.pid); // skip any that didn't match
 }
 
@@ -4932,9 +4943,16 @@ function openRecordAudit(){
     h+='<div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:5px">'+
        esc(list[0].name)+(dupe?'<span style="font-size:11px;font-weight:600;color:var(--warning-text);margin-left:7px">'+
        list.length+' records with this name</span>':'')+'</div>';
+    // Within a same-name group, say plainly which record holds the history and which
+    // is safe to remove, so the user never has to compare internal IDs by eye.
+    const best = dupe ? list.reduce((a,b)=>
+      (logCountFor(b.id)+histCountFor(b.id)) > (logCountFor(a.id)+histCountFor(a.id)) ? b : a) : null;
+    const bestHasData = best && (logCountFor(best.id)+histCountFor(best.id))>0;
     list.forEach(c=>{
       const lc=logCountFor(c.id), hc=histCountFor(c.id);
       const flags=recordAuditFlags(c);
+      const isKeep = bestHasData && c.id===best.id;
+      const isSpare= dupe && bestHasData && c.id!==best.id && lc===0 && hc===0;
       h+='<div style="background:var(--surface-primary);border:1px solid '+
          (dupe?'var(--warning)':'var(--border-subtle)')+';border-radius:var(--r);padding:9px 10px;margin-bottom:6px">'
        + '<div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--text-secondary)">'+esc(c.id)+'</div>'
@@ -4946,7 +4964,9 @@ function openRecordAudit(){
        + '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">'
        +   '<b>'+lc+'</b> log'+(lc===1?'':'s')+' &middot; <b>'+hc+'</b> history entr'+(hc===1?'y':'ies')+'</div>'
        + (flags.length?'<div style="font-size:11px;color:var(--warning-text);margin-top:4px">Needs review: '+esc(flags.join('; '))+'</div>':'')
-       + (lc===0&&hc===0&&dupe?'<div style="font-size:11px;color:var(--success);margin-top:4px">No attached data — safe to remove</div>':'')
+       + (isKeep ?'<div style="font-size:12px;font-weight:700;color:var(--success-text);background:var(--success-soft);border-radius:8px;padding:6px 9px;margin-top:6px">KEEP THIS ONE &mdash; it holds your dose history</div>':'')
+       + (isSpare?'<div style="font-size:12px;font-weight:700;color:var(--danger-text);background:var(--danger-soft);border-radius:8px;padding:6px 9px;margin-top:6px">DELETE THIS ONE &mdash; empty duplicate, nothing recorded against it</div>':'')
+       + (!isKeep&&!isSpare&&lc===0&&hc===0&&dupe?'<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">No dose history attached</div>':'')
        + '<button type="button" class="btn btn-s btn-sm" style="width:100%;margin-top:7px;font-size:12px" onclick="recordAuditDelete(\''+esc(c.id)+'\')">Delete this record</button>'
        + '</div>';
     });
@@ -5562,7 +5582,7 @@ function kiSetDurtype(t){
   }
 }
 function kiOpenStack(){
-  _kiMode='stack'; _kiQueue=[{}]; _kiIndex=0; _kiActivateId=null;
+  _kiMode='stack'; _kiQueue=[{}]; _kiIndex=0; _kiActivateId=null; _kiCreated=[]; _kiStackCount=0;
   kiRenderStep();
   openOv('ov-keyinfo');
 }
@@ -5617,6 +5637,7 @@ function kiRenderStep(existing){
   kiSetDurtype('ongoing');
   kiPopulateChooser();
   kiResetTitration();
+  kiUpdateBack();
   setTimeout(kiFreqChanged,0);
   const finishBtn=document.getElementById('ki-finish');
   if(_kiMode==='stack'){
@@ -5852,11 +5873,12 @@ async function kiNextInner(after){
     const persisted = D.compounds.some(x=>x && x.id===(c&&c.id));
     if(!persisted){ ptAlert('Could not save this protocol. Please try again.'); return; }
     _kiStackCount=(_kiStackCount||0)+1;
+    if(c && c.id && _kiCreated.indexOf(c.id)===-1) _kiCreated.push(c.id);
     if(after==='finish'){
       // Save complete — now close the wizard.
       closeOv('ov-keyinfo'); _kiMode=null; render();
       if(_kiStackCount>0) ptAlert('Stack created — open any compound to add finer detail.');
-      _kiStackCount=0;
+      _kiStackCount=0; _kiCreated=[];
       return;
     }
     // advance: present a fresh popup for the next compound.
@@ -5918,6 +5940,12 @@ function kiSyncFormFields(){
   show('ki-vialrow',   inj||spray);
   show('ki-bac-wrap',  (inj&&!oil)||spray);
   show('ki-nasalrow',  spray);
+  // Most nasal pumps deliver 0.1 ml per actuation. Pre-fill it so the user is not
+  // blocked by a number they cannot know up front; they can overwrite it.
+  if(spray){
+    const vps=document.getElementById('ki-volPerSpray');
+    if(vps && !String(vps.value||'').trim()) vps.value='0.1';
+  }
   const lbl=document.getElementById('ki-vial-lbl');
   if(lbl) lbl.textContent = oil ? 'Concentration (mg/mL)' : (spray ? 'Peptide amount' : 'Vial size');
   const vial=document.getElementById('ki-vial');
@@ -5928,7 +5956,50 @@ function kiSyncFormFields(){
     : 'Powder reconstituted with BAC water.';
 }
 let _kiStackCount=0;
-function kiCancel(){ closeOv('ov-keyinfo'); _kiMode=null; _kiStackCount=0; }
+// Compounds saved during THIS wizard run, oldest first. Back re-opens the last one
+// for editing (via _kiChosenId, so saving updates it in place — never a duplicate).
+let _kiCreated=[];
+async function kiBack(){
+  if(!_kiCreated.length) return;
+  // Going back abandons whatever is on the current step, so ask first — but only
+  // when there is actually something to lose.
+  if(typeof kiStepHasEntry==='function' && kiStepHasEntry()){
+    const go = await ptConfirm(
+      'Going back will discard what you have entered on this step.\n\n'+
+      'The protocol you added before it will re-open so you can edit it.',
+      'Discard this entry?', {okText:'Discard and go back', cancelText:'Stay here'});
+    if(!go) return;
+  }
+  const id=_kiCreated[_kiCreated.length-1];
+  const c=D.compounds.find(x=>x && x.id===id);
+  if(!c){ _kiCreated.pop(); kiUpdateBack(); return; }
+  _kiCreated.pop();
+  _kiStackCount=Math.max(0,_kiStackCount-1);
+  const set=(f,v)=>{const el=document.getElementById(f); if(el) el.value=(v==null?'':v);};
+  set('ki-name', c.name); set('ki-dose', c.dose); set('ki-unit', c.unit||'mcg');
+  set('ki-freq', c.freq||'daily'); set('ki-vial', c.vialSize); set('ki-bac', c.bacWater);
+  set('ki-vialUnit', c.vialUnit||'mg');
+  set('ki-saline', c.saline); set('ki-volPerSpray', c.volPerSpray);
+  set('ki-start', c.start); set('ki-weeks', c.weeks); set('ki-end', c.end);
+  kiApplyRouteForm(c);
+  { const nc=normalizeSchedule({freq:c.freq, time:c.time});
+    set('ki-freq', nc.freq||'daily');
+    set('ki-time', (['AM','PM','Both'].includes(nc.time)?nc.time:'AM')); }
+  kiSetDurtype((c.durtype==='weeks'||c.weeks||c.end)?'weeks':'ongoing');
+  kiSetDaysArr(c.days||[]);
+  kiLoadTitration(c);
+  _kiChosenId=id;                    // update this record, do not create another
+  const ttl=document.getElementById('ki-title');
+  if(ttl) ttl.textContent='Edit '+(c.name||'protocol');
+  const prog=document.getElementById('ki-progress');
+  if(prog) prog.textContent='Editing a protocol you just added — saving updates it.';
+  kiUpdateBack();
+}
+function kiUpdateBack(){
+  const b=document.getElementById('ki-back');
+  if(b) b.style.display = (_kiMode==='stack' && _kiCreated.length) ? 'block' : 'none';
+}
+function kiCancel(){ closeOv('ov-keyinfo'); _kiMode=null; _kiStackCount=0; _kiCreated=[]; }
 
 // ─── DOSE RECALL FROM HISTORY ──────────────────────────
 function openDoseRecall(){
@@ -6055,7 +6126,11 @@ function onRouteChange(){
   const route=document.getElementById('f-route').value;
   const block=document.getElementById('f-spray-block');
   if(block) block.style.display = isSprayRoute(route) ? 'block' : 'none';
-  if(isSprayRoute(route)) updateSprayCalc();
+  if(isSprayRoute(route)){
+    const vps=document.getElementById('f-volPerSpray');
+    if(vps && !String(vps.value||'').trim()) vps.value='0.1';
+    updateSprayCalc();
+  }
 }
 function updateSprayCalc(){
   const g=id=>{const el=document.getElementById(id);return el?el.value:'';};
@@ -6110,6 +6185,19 @@ function validateProtocolDraft(d, ctx){
     if(!(num(d.vialSize)>0)) errors.push({field:'vialSize', message: isOilBased(d)
         ? 'Concentration (mg/mL) is required for oil-based protocols.'
         : 'Vial size is required for injectable protocols.'});
+    // A dose in IU cannot be computed against a vial measured in mg/mcg (or the
+    // reverse): reconstitutionCalc/oilCalc reject it, so the protocol would save
+    // but show "Check vial units" on Today. Block it at the point of entry.
+    const fam=u=>{ const n2=normUnit(u); return n2==='IU' ? 'iu' : (n2==='mg'||n2==='mcg') ? 'mass' : (n2==='ml' ? 'vol' : '?'); };
+    const dFam=fam(d.unit), vFam=fam(d.vialUnit||'mg');
+    if(dFam!=='vol' && dFam!=='?' && vFam!=='?' && dFam!==vFam){
+      errors.push({field:'unit', message:'Dose is in '+normUnit(d.unit)+' but the vial is in '+
+        normUnit(d.vialUnit||'mg')+'. These cannot be converted, so the draw amount cannot be '+
+        'calculated. Set both to the same measurement (both IU, or both mg/mcg).'});
+    }
+    if(dFam==='iu' && isOilBased(d)){
+      errors.push({field:'unit', message:'Oil-based protocols are dosed by mass (mg or mcg), not IU.'});
+    }
     // BAC water required for reconstituted peptides (not oil-based)
     // Oil-based compounds are pre-mixed and never need BAC water — including when
     // taken SubQ in an insulin pin. Use the same oil test as the calculator and
@@ -6675,10 +6763,12 @@ window.PT_debug = {
       </div>
       <div style="display:flex;gap:8px;margin-bottom:14px" id="ki-nasalrow">
         <div style="flex:1"><label class="fl">Saline (ml)</label><input class="fi" id="ki-saline" type="number" step="0.1" placeholder="optional"></div>
-        <div style="flex:1"><label class="fl">Volume per spray (ml)</label><input class="fi" id="ki-volPerSpray" type="number" step="0.001" placeholder="e.g. 0.1"></div>
+        <div style="flex:1"><label class="fl">Volume per spray (ml)</label><input class="fi" id="ki-volPerSpray" type="number" step="0.001" placeholder="e.g. 0.1">
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Most nasal pumps are 0.1 ml. Change it if your device states otherwise.</div></div>
       </div>
 
       <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="button" class="btn btn-s" style="flex:1;display:none" id="ki-back" onclick="kiBack()">&lsaquo; Back</button>
         <button type="button" class="btn btn-s" style="flex:1" onclick="kiCancel()">Cancel</button>
         <button type="button" class="btn btn-s" style="flex:1;display:none" id="ki-finish" onclick="kiFinishStack()">Finish</button>
         <button type="button" class="btn btn-p" style="flex:1" id="ki-next" onclick="kiNext()">Save</button>
@@ -6692,8 +6782,9 @@ window.PT_debug = {
       <div class="sh-handle"></div>
       <div class="sh-title">Record Audit</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
-        Every stored protocol record. Same-name records are grouped so you never have to
-        tell them apart by eye. Deletion is by exact ID and asks for confirmation.
+        Every stored protocol record, grouped by name. Where the same name appears twice,
+        the one holding your dose history is marked KEEP and the empty one is marked DELETE.
+        You do not need to read the ID codes &mdash; just follow the green and red labels.
       </div>
       <div id="recaudit-body"></div>
       <button type="button" class="btn btn-s" style="width:100%;margin-top:14px" onclick="closeOv('ov-recaudit')">Close</button>
