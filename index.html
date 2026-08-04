@@ -630,7 +630,7 @@ tr:active td{background:var(--card2)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0803.2149</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0804.1027</div>
       </div>
     </div>
   </div>
@@ -886,6 +886,7 @@ tr:active td{background:var(--card2)}
       <button class="btn btn-p" onclick="openAdd()" style="margin-top:14px;font-size:15px">+ Add New Compound</button>
       <button class="btn btn-s" onclick="kiOpenStack()" style="margin-top:10px;width:100%">+ New Protocol Stack (guided)</button>
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle)">
+        <button class="btn btn-s" onclick="openRecordAudit()" style="font-size:14px;margin-bottom:10px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"><path d="M3 6h18M3 12h18M3 18h18"/></svg> Record Audit — inspect &amp; remove duplicates</button>
         <button class="btn btn-d" onclick="masterReset()" style="font-size:14px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex-shrink:0"><path d="M12 9v4M12 17h.01M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L14 3.9a2 2 0 00-3.4 0z"/></svg> Master Reset — Clear All Data</button>
       </div>
     
@@ -1474,6 +1475,7 @@ function ptDialog(opts){
       (opts.title?'<div class="sh-title">'+esc(opts.title)+'</div>':'')+
       (opts.message?'<p style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:16px;white-space:pre-line">'+esc(opts.message)+'</p>':'')+
       inputHtml+'<div class="brow">'+cancelBtn+
+      (opts.altText?'<button class="btn btn-s" id="ptd-alt">'+esc(opts.altText)+'</button>':'')+
       '<button class="btn '+okClass+'" id="ptd-ok">'+esc(opts.okText||'OK')+'</button></div></div>';
     document.body.appendChild(ov);
     let done=false;
@@ -1482,6 +1484,8 @@ function ptDialog(opts){
       const inp=ov.querySelector('#ptd-input');
       if(kind==='prompt') finish(inp?inp.value:''); else if(kind==='confirm') finish(true); else finish(true);
     });
+    const aB=ov.querySelector('#ptd-alt');
+    if(aB) aB.addEventListener('click',()=> finish('alt'));
     const cB=ov.querySelector('#ptd-cancel');
     if(cB) cB.addEventListener('click',()=> finish(kind==='prompt'?null:false));
     ov.addEventListener('click',ev=>{ if(ev.target===ov) finish(kind==='prompt'?null:(kind==='confirm'?false:true)); });
@@ -1775,7 +1779,13 @@ const dAgo=n=>{const d=new Date();d.setDate(d.getDate()-n);return localDateStr(d
 function normalizeDurations(){
   let fixed=0;
   (D.compounds||[]).forEach(c=>{
-    if(c && c.durtype==='ongoing' && (c.end || c.weeks)){ c.end=''; c.weeks=''; fixed++; }
+    if(!c) return;
+    if(c.durtype==='ongoing' && (c.end || c.weeks)){ c.end=''; c.weeks=''; fixed++; }
+    // isDue() skips its start check when start is empty ("if(c.start && ...)"), so an
+    // active record with no start is due on every matching weekday, forever, with no
+    // anchor. Backfill from trackingStartDate — when tracking actually began — falling
+    // back to today. This fills an ABSENT value; it never overrides a real start date.
+    if(c.active && !c.start){ c.start = c.trackingStartDate || tod(); fixed++; }
   });
   if(fixed) save();
   return fixed;
@@ -2421,12 +2431,17 @@ function drawInfo(c, date){
   // Dose already given as a volume: it IS the draw. Derive the mass it carries
   // when the concentration is known, so the card can still show a real dose.
   if(unit==='ml'){
-    let doseText=dose.toFixed(2)+' ml';
+    // The mass this volume carries is only knowable from a stored concentration.
+    // Never infer one from the compound name or a default.
     if(isPosFinite(vs) && ['mg','mcg'].includes(vUnit)){
       const perMl = isOilBased(c) ? vs : (isPosFinite(bac) ? vs/bac : NaN);
-      if(Number.isFinite(perMl) && perMl>0) doseText=fmtNum(+(dose*perMl).toFixed(4))+' '+vUnit;
+      if(Number.isFinite(perMl) && perMl>0){
+        return {units:dose*100, ml:dose, doseText:fmtNum(+(dose*perMl).toFixed(4))+' '+vUnit};
+      }
     }
-    return {units:dose*100, ml:dose, doseText:doseText};
+    // No concentration on record: show the volume once and ask for the missing value
+    // rather than repeating the volume as though it were a dose.
+    return {units:dose*100, ml:dose, doseText:null, needsConc:true};
   }
   if(isOilBased(c)){
     const r=oilCalc({conc:vs, concUnit:vUnit, dose:dose, doseUnit:unit});
@@ -2447,9 +2462,19 @@ function pinAmountText(c, info){
 // The dose that pin contains.
 function doseLabel(c, date){
   const info=drawInfo(c, date);
+  if(info && info.needsConc) return 'Set concentration to show dose';
   if(info && info.doseText) return info.doseText;
   return fmtNum(effectiveDose(c, date))+' '+normUnit(c.unit);
 }
+// Names are compared normalised: trimmed, case-folded, internal whitespace collapsed.
+function normName(n){ return String(n||'').trim().toLowerCase().replace(/\s+/g,' '); }
+function findByName(name, exceptId){
+  const w=normName(name);
+  return (D.compounds||[]).filter(c=>c && normName(c.name)===w && c.id!==exceptId);
+}
+// How many logs / history entries hang off a compound id.
+function logCountFor(id){ return (D.logs||[]).filter(l=>l && l.pid===id).length; }
+function histCountFor(id){ return (D.history||[]).filter(h=>h && h.cid===id).length; }
 // A dose entered in mL is already a VOLUME. It must never be pushed through the
 // mass->concentration path: toMcg() has no 'ml' case and silently returns the
 // number as if it were mcg, which produced a 0.00ml draw for a real 0.07 ml dose.
@@ -4595,6 +4620,80 @@ function updateQuickRef(){try{
 function updatePinLabel(){} // kept for compatibility
 
 
+// ─── RECORD AUDIT ──────────────────────────────────────────
+// Read-only inspector plus delete-by-exact-id. Deliberately shows the stable id and
+// the attached log/history counts so the user deletes the empty duplicate, not the
+// record carrying their history.
+function recordAuditRows(){
+  const groups={};
+  (D.compounds||[]).forEach(c=>{ if(!c) return; (groups[normName(c.name)]=groups[normName(c.name)]||[]).push(c); });
+  return groups;
+}
+function recordAuditFlags(c){
+  const f=[];
+  if(!c.freq) f.push('no frequency set');
+  if(c.active && !c.start) f.push('no start date');
+  if(c.durtype==='enddate') f.push("durtype 'enddate' — not offered by the editor");
+  if(c.active && c.end && c.end < tod()) f.push('active but ended '+fmtD(c.end));
+  if(normUnit(c.unit)==='IU' && normUnit(c.vialUnit||'mg')!=='IU') f.push('IU dose vs mass vial');
+  if(normUnit(c.unit)==='ml' && !(parseFloat(c.vialSize)>0)) f.push('volume dose, no concentration');
+  return f;
+}
+function openRecordAudit(){
+  const groups=recordAuditRows();
+  const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let h='';
+  Object.keys(groups).sort().forEach(key=>{
+    const list=groups[key];
+    const dupe=list.length>1;
+    h+='<div style="margin-bottom:14px">';
+    h+='<div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:5px">'+
+       esc(list[0].name)+(dupe?'<span style="font-size:11px;font-weight:600;color:var(--warning-text);margin-left:7px">'+
+       list.length+' records with this name</span>':'')+'</div>';
+    list.forEach(c=>{
+      const lc=logCountFor(c.id), hc=histCountFor(c.id);
+      const flags=recordAuditFlags(c);
+      h+='<div style="background:var(--surface-primary);border:1px solid '+
+         (dupe?'var(--warning)':'var(--border-subtle)')+';border-radius:var(--r);padding:9px 10px;margin-bottom:6px">'
+       + '<div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--text-secondary)">'+esc(c.id)+'</div>'
+       + '<div style="font-size:12px;color:var(--text-primary);margin-top:3px">'
+       +   (c.active?'Active':'Inactive')+' &middot; '+esc(c.time||'—')+' &middot; '+esc(c.freq||'no freq')
+       +   ' &middot; start '+esc(c.start||'—')+'</div>'
+       + '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Days: '
+       +   ((c.days&&c.days.length)?c.days.map(d=>DAYS[d]||d).join(' '):'every day')+'</div>'
+       + '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">'
+       +   '<b>'+lc+'</b> log'+(lc===1?'':'s')+' &middot; <b>'+hc+'</b> history entr'+(hc===1?'y':'ies')+'</div>'
+       + (flags.length?'<div style="font-size:11px;color:var(--warning-text);margin-top:4px">Needs review: '+esc(flags.join('; '))+'</div>':'')
+       + (lc===0&&hc===0&&dupe?'<div style="font-size:11px;color:var(--success);margin-top:4px">No attached data — safe to remove</div>':'')
+       + '<button type="button" class="btn btn-s btn-sm" style="width:100%;margin-top:7px;font-size:12px" onclick="recordAuditDelete(\''+esc(c.id)+'\')">Delete this record</button>'
+       + '</div>';
+    });
+    h+='</div>';
+  });
+  document.getElementById('recaudit-body').innerHTML = h || '<div style="font-size:13px;color:var(--text-secondary)">No protocols stored.</div>';
+  openOv('ov-recaudit');
+}
+async function recordAuditDelete(id){
+  const c=(D.compounds||[]).find(x=>x && x.id===id);
+  if(!c){ await ptAlert('No record with that ID.'); return; }
+  const lc=logCountFor(id), hc=histCountFor(id);
+  const warn = (lc||hc)
+    ? '\n\nWARNING: this record has '+lc+' logged dose'+(lc===1?'':'s')+' and '+hc+
+      ' history entr'+(hc===1?'y':'ies')+'. Those belong to THIS record.'
+    : '\n\nThis record has no logs and no history attached.';
+  const go = await ptConfirm('Delete "'+c.name+'"?\n\nID: '+id+warn+
+    '\n\nOnly this exact ID is removed. Other records keep their own logs and history.',
+    'Delete record', {destructive:true, okText:'Delete this record', cancelText:'Keep it'});
+  if(!go) return;
+  const before=D.compounds.length;
+  // Remove by exact id only. Logs and history keyed to OTHER ids are never touched.
+  D.compounds = D.compounds.filter(x=>!(x && x.id===id));
+  if(D.compounds.length!==before-1){ await ptAlert('Delete failed — nothing was removed.'); return; }
+  save();
+  const still=(D.compounds||[]).some(x=>x && x.id===id);
+  if(still){ await ptAlert('Delete did not persist. Please try again.'); return; }
+  openRecordAudit(); render();
+}
 async function masterReset(){
   // Step 1: First confirmation
   if(!(await ptConfirm('MASTER RESET\n\nThis will permanently delete ALL data including:\n• All compounds & protocols\n• All dose logs\n• All inventory\n• All history\n\nThis cannot be undone.\n\nAre you sure?'))) return;
@@ -5402,7 +5501,57 @@ async function kiNextInner(after){
       }
     }
     if(!c){
+      // A duplicate name silently creates a SECOND schedule: both records appear on
+      // Today (often in different slots), logs stay attached to the original, and the
+      // pair reads as one protocol duplicated. Block it at the point of creation.
+      const matches=findByName(data.name);
+      if(matches.length){
+        const ex=matches[0];
+        const choice = await ptDialog({kind:'confirm', title:'Duplicate protocol',
+          message:'A protocol named "'+data.name+'" already exists'+
+            (ex.active?' and is active':' (currently inactive)')+
+            '.\n\nIt holds '+logCountFor(ex.id)+' logged dose'+(logCountFor(ex.id)===1?'':'s')+
+            ' and '+histCountFor(ex.id)+' history entr'+(histCountFor(ex.id)===1?'y':'ies')+
+            '.\n\nUse the existing protocol to keep that history, or create a separate one '+
+            'if you genuinely run two schedules for this compound. A separate protocol gets '+
+            'its own Today entries, its own history and its own adherence.',
+          okText:'Use existing protocol', altText:'Create separate', cancelText:'Cancel'});
+        if(choice===false || choice===null) return;          // Cancel
+        if(choice===true){
+          // Use existing: update the STABLE record in place. No new id, no lost history.
+          Object.assign(ex, { dose:data.dose, unit:data.unit, freq:data.freq,
+            days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')),
+            start:data.start, weeks:data.weeks, end:data.end, durtype:data.durtype,
+            route:data.route, formulation:data.formulation,
+            vialSize:data.vialSize, vialUnit:data.vialUnit, bacWater:data.bacWater,
+            saline:data.saline, volPerSpray:data.volPerSpray, active:true });
+          if(titr) ex.titration=titr; else delete ex.titration;
+          c=ex; stampTracking(c,'reuse'); snapshotCompound(c,'edit'); save();
+          await ptAlert('Updated the existing "'+ex.name+'" protocol. Its '+
+            logCountFor(ex.id)+' logged dose'+(logCountFor(ex.id)===1?'':'s')+
+            ' and history are unchanged.', 'Using existing protocol');
+        } else {
+          // Create separate: demand a label that distinguishes the two.
+          let label='';
+          while(true){
+            const v = await ptPrompt('Give this protocol a label so you can tell it apart '+
+              'from the existing "'+data.name+'" — for example "morning", "cruise" or "low dose".',
+              {title:'Distinguishing label', placeholder:'e.g. evening'});
+            if(v===null) return;                              // Cancel
+            label=String(v||'').trim();
+            if(!label){ await ptAlert('A label is required to create a separate protocol.','Label required'); continue; }
+            const candidate=data.name+' ('+label+')';
+            if(findByName(candidate).length){
+              await ptAlert('"'+candidate+'" also already exists. Choose a different label.','Still a duplicate');
+              continue;
+            }
+            data.name=candidate; break;
+          }
+        }
+      }
       // "Add your own" (or chosen id not found): create a new compound.
+      // Skipped when "Use existing" above adopted a stable record into c.
+      if(!c){
       c={ id:uid(), name:data.name, dose:data.dose, unit:data.unit, freq:data.freq,
         route:data.route||defaultRouteFor(data.name), formulation:data.formulation,
         days:data.days||[], time:(data.freq==='bid'?'Both':(data.time||'AM')), start:data.start, weeks:data.weeks, end:data.end,
@@ -5411,9 +5560,9 @@ async function kiNextInner(after){
         color: (typeof COLORS!=='undefined' && COLORS.length) ? COLORS[D.compounds.length % COLORS.length] : '#4B96E6' };
       if(titr) c.titration=titr;
       D.compounds.push(c);
+      stampTracking(c,'create'); snapshotCompound(c,'create');
+      }
     }
-    if(c) stampTracking(c,'create');
-    if(c) snapshotCompound(c,'create');
     save();
     // §3.1/§6: verify persistence before navigating.
     const persisted = D.compounds.some(x=>x && x.id===(c&&c.id));
@@ -6196,6 +6345,20 @@ window.PT_debug = {
         <button type="button" class="btn btn-s" style="flex:1;display:none" id="ki-finish" onclick="kiFinishStack()">Finish</button>
         <button type="button" class="btn btn-p" style="flex:1" id="ki-next" onclick="kiNext()">Save</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Record audit: every compound record with its stable id and attached data -->
+  <div id="ov-recaudit" class="ov hidden">
+    <div class="sh" style="max-height:86vh;overflow-y:auto">
+      <div class="sh-handle"></div>
+      <div class="sh-title">Record Audit</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+        Every stored protocol record. Same-name records are grouped so you never have to
+        tell them apart by eye. Deletion is by exact ID and asks for confirmation.
+      </div>
+      <div id="recaudit-body"></div>
+      <button type="button" class="btn btn-s" style="width:100%;margin-top:14px" onclick="closeOv('ov-recaudit')">Close</button>
     </div>
   </div>
 
