@@ -878,7 +878,7 @@ html[data-theme="light"] .calc-section-lbl{color:var(--text-muted)}
       <div style="margin-left:auto;text-align:right;align-self:center">
         <div style="font-size:15px;font-weight:700;color:var(--brand)" id="hdrTitle">Today</div>
         <div style="font-size:11px;color:var(--text-muted);margin-top:1px" id="hdrDate"></div>
-      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0805.1926</div>
+      <div style="font-size:9px;color:var(--brand);opacity:0.5;margin-top:2px">v2.2 RC3 · build b0806.0107</div>
       </div>
     </div>
   </div>
@@ -1714,6 +1714,10 @@ function oilCalc(inp){
   return {ok:true, ml:ml, units:ml*100};
 }
 
+// When a dialog last closed. Controls directly beneath a dismissed dialog ignore
+// clicks for a moment afterwards, as a second line of defence against tap-through.
+let _ptDialogClosedAt = 0;
+function ptTapThrough(){ return (Date.now() - _ptDialogClosedAt) < 400; }
 // Custom dialogs — promise-based, reuse overlay CSS, safe when hidden.
 function ptDialog(opts){
   return new Promise(resolve=>{
@@ -1737,7 +1741,15 @@ function ptDialog(opts){
       '<button class="btn '+okClass+'" id="ptd-ok">'+esc(opts.okText||'OK')+'</button></div></div>';
     document.body.appendChild(ov);
     let done=false;
-    const finish=(val)=>{ if(done) return; done=true; ov.remove(); resolve(val); };
+    const finish=(val)=>{ if(done) return; done=true;
+      // The sheet underneath has buttons in the same screen positions as this
+      // dialog's. Removing the overlay immediately let the tap fall through to
+      // them (Cancel here landed on the wizard's Cancel and closed it). Keep the
+      // overlay in place as an invisible shield until the tap has settled.
+      ov.style.pointerEvents='none'; ov.style.opacity='0';
+      _ptDialogClosedAt = Date.now();
+      setTimeout(()=>{ try{ ov.remove(); }catch(e){} }, 350);
+      resolve(val); };
     ov.querySelector('#ptd-ok').addEventListener('click',()=>{
       const inp=ov.querySelector('#ptd-input');
       if(kind==='prompt') finish(inp?inp.value:''); else if(kind==='confirm') finish(true); else finish(true);
@@ -4930,10 +4942,15 @@ function recordAuditFlags(c){
   if(c.active && c.end && c.end < tod()) f.push('active but ended '+fmtD(c.end));
   if(normUnit(c.unit)==='IU' && normUnit(c.vialUnit||'mg')!=='IU') f.push('IU dose vs mass vial');
   if(normUnit(c.unit)==='ml' && !(parseFloat(c.vialSize)>0)) f.push('volume dose, no concentration');
+  if((D.compounds||[]).filter(x=>x && x.id===c.id).length>1) f.push('shares its ID with another record');
   return f;
 }
 function openRecordAudit(){
   const groups=recordAuditRows();
+  // Two records sharing an ID behave as one: every lookup finds the first, so
+  // toggling one appears to toggle them all. Detect and surface it.
+  const idCount={};
+  (D.compounds||[]).forEach(c=>{ if(c&&c.id) idCount[c.id]=(idCount[c.id]||0)+1; });
   const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let h='';
   Object.keys(groups).sort().forEach(key=>{
@@ -4956,6 +4973,7 @@ function openRecordAudit(){
       h+='<div style="background:var(--surface-primary);border:1px solid '+
          (dupe?'var(--warning)':'var(--border-subtle)')+';border-radius:var(--r);padding:9px 10px;margin-bottom:6px">'
        + '<div style="font-family:ui-monospace,monospace;font-size:11px;color:var(--text-secondary)">'+esc(c.id)+'</div>'
+       + (idCount[c.id]>1?'<div style="font-size:12px;font-weight:700;color:var(--danger-text);background:var(--danger-soft);border-radius:8px;padding:6px 9px;margin-top:6px">DUPLICATE ID &mdash; '+idCount[c.id]+' records share this code, so they switch on and off together</div>':'')
        + '<div style="font-size:12px;color:var(--text-primary);margin-top:3px">'
        +   (c.active?'Active':'Inactive')+' &middot; '+esc(c.time||'—')+' &middot; '+esc(c.freq||'no freq')
        +   ' &middot; start '+esc(c.start||'—')+'</div>'
@@ -5521,13 +5539,24 @@ function kiPopulateChooser(){
   const sel=document.getElementById('ki-choose');
   const wrap=document.getElementById('ki-choose-wrap');
   if(!sel||!wrap) return;
-  // list inactive compounds (the pre-loaded library not yet in the user's protocol)
-  const avail=(D.compounds||[]).filter(c=>c.active===false);
-  if(_kiMode==='stack' && avail.length){
+  // Compounds not yet in the protocol are selectable. Ones already added are still
+  // LISTED, marked and disabled — previously they simply disappeared, which looked
+  // like the app had lost them.
+  const all=(D.compounds||[]).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  const avail=all.filter(c=>c.active===false);
+  const added=all.filter(c=>c.active===true);
+  if(_kiMode==='stack' && all.length){
     wrap.style.display='block';
     sel.innerHTML='<option value="">\u2014 Add your own \u2014</option>'+
-      avail.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+      (avail.length?'<optgroup label="Not yet in your protocol">'+
+        avail.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')+'</optgroup>':'')+
+      (added.length?'<optgroup label="Already in your protocol">'+
+        added.map(c=>`<option value="${c.id}" disabled>${esc(c.name)} \u2014 already added</option>`).join('')+'</optgroup>':'');
     sel.value='';
+    const note=document.getElementById('ki-choose-note');
+    if(note) note.textContent = added.length
+      ? added.length+' compound'+(added.length===1?' is':'s are')+' already in your protocol. Edit those from the Protocol tab.'
+      : '';
   } else {
     wrap.style.display='none';
   }
@@ -5583,11 +5612,12 @@ function kiSetDurtype(t){
 }
 function kiOpenStack(){
   _kiMode='stack'; _kiQueue=[{}]; _kiIndex=0; _kiActivateId=null; _kiCreated=[]; _kiStackCount=0;
+  kiSnapshotForRollback();
   kiRenderStep();
   openOv('ov-keyinfo');
 }
 function kiOpenActivate(pid){
-  _kiMode='activate'; _kiActivateId=pid; _kiIndex=0; _kiQueue=[];
+  _kiMode='activate'; _kiActivateId=pid; _kiIndex=0; _kiQueue=[]; _kiRollback=null;
   const c=D.compounds.find(x=>x.id===pid);
   kiRenderStep(c);
   openOv('ov-keyinfo');
@@ -5714,9 +5744,11 @@ function kiCollect(){
   };
 }
 function kiFinishStack(){
+  if(ptTapThrough()) return;
   // §3.1: Finish must save the current entry first (same path as Save & add next),
   // then close. If the current step is blank (nothing entered), just close.
   if(kiStepHasEntry()){ kiNext('finish'); return; }
+  _kiRollback=null;                          // committed
   closeOv('ov-keyinfo'); _kiMode=null; render();
   if(_kiStackCount>0) ptAlert('Stack created — open any compound to add finer detail.');
   _kiStackCount=0;
@@ -5752,6 +5784,7 @@ function kiScrollToField(field){
 }
 let _kiSaving=false;
 async function kiNext(after){
+  if(ptTapThrough()) return;
   after = after || 'advance';  // 'advance' = Save & add next; 'finish' = save then close
   if(_kiSaving) return;        // double-submit protection: ignore rapid repeated taps
   _kiSaving=true;
@@ -5876,6 +5909,7 @@ async function kiNextInner(after){
     if(c && c.id && _kiCreated.indexOf(c.id)===-1) _kiCreated.push(c.id);
     if(after==='finish'){
       // Save complete — now close the wizard.
+      _kiRollback=null;                     // committed
       closeOv('ov-keyinfo'); _kiMode=null; render();
       if(_kiStackCount>0) ptAlert('Stack created — open any compound to add finer detail.');
       _kiStackCount=0; _kiCreated=[];
@@ -5959,7 +5993,28 @@ let _kiStackCount=0;
 // Compounds saved during THIS wizard run, oldest first. Back re-opens the last one
 // for editing (via _kiChosenId, so saving updates it in place — never a duplicate).
 let _kiCreated=[];
+// A wizard run is a transaction: Finish commits it, Cancel undoes ALL of it.
+// Snapshot taken at kiOpenStack so cancelling cannot leave half-added protocols
+// stranded in the Protocol list.
+let _kiRollback=null;
+function kiSnapshotForRollback(){
+  try{
+    _kiRollback={
+      compounds: JSON.parse(JSON.stringify(D.compounds||[])),
+      history:   JSON.parse(JSON.stringify(D.history||[]))
+    };
+  }catch(e){ _kiRollback=null; }
+}
+function kiApplyRollback(){
+  if(!_kiRollback) return false;
+  D.compounds = _kiRollback.compounds;
+  D.history   = _kiRollback.history;
+  _kiRollback = null;
+  save();
+  return true;
+}
 async function kiBack(){
+  if(ptTapThrough()) return;
   if(!_kiCreated.length) return;
   // Going back abandons whatever is on the current step, so ask first — but only
   // when there is actually something to lose.
@@ -5999,7 +6054,29 @@ function kiUpdateBack(){
   const b=document.getElementById('ki-back');
   if(b) b.style.display = (_kiMode==='stack' && _kiCreated.length) ? 'block' : 'none';
 }
-function kiCancel(){ closeOv('ov-keyinfo'); _kiMode=null; _kiStackCount=0; _kiCreated=[]; }
+async function kiCancel(){
+  if(ptTapThrough()) return;
+  const n=_kiStackCount||0;
+  if(_kiMode==='stack' && n>0){
+    const choice = await ptDialog({kind:'confirm', title:'Cancel setup?',
+      message:'You have added '+n+' protocol'+(n===1?'':'s')+' in this session.\n\n'+
+        'Cancelling removes '+(n===1?'it':'them')+' completely \u2014 '+(n===1?'it':'they')+
+        ' will not appear in your Protocol list.\n\nKeep '+(n===1?'it':'them')+' instead?',
+      okText:'Keep and close', altText:'Discard all', cancelText:'Back to setup'});
+    if(choice===false || choice===null) return;            // Back to setup
+    if(choice==='alt'){                                    // Discard all
+      kiApplyRollback();
+      closeOv('ov-keyinfo'); _kiMode=null; _kiStackCount=0; _kiCreated=[];
+      render();
+      await ptAlert('Setup cancelled. Nothing was added to your protocol.','Cancelled');
+      return;
+    }
+    // Keep and close
+  }
+  _kiRollback=null;
+  closeOv('ov-keyinfo'); _kiMode=null; _kiStackCount=0; _kiCreated=[];
+  render();
+}
 
 // ─── DOSE RECALL FROM HISTORY ──────────────────────────
 function openDoseRecall(){
@@ -6660,6 +6737,7 @@ window.PT_debug = {
         <select class="fs" id="ki-choose" onchange="kiChooseCompound()">
           <option value="">— Add your own —</option>
         </select>
+        <div id="ki-choose-note" style="font-size:11px;color:var(--text-muted);margin-top:5px"></div>
       </div>
 
       <label class="fl">Name</label>
